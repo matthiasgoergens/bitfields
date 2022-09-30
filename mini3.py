@@ -7,13 +7,12 @@ import ctypes
 
 
 class Bar(Structure):
-    # _fields_ = [("A", c_ulonglong, 20), ("B", c_uint, 24), ("C", c_ulonglong, 8)]
-    # _fields_ = [("A", c_ulonglong, 20), ("B", c_ulonglong, 24), ("C", c_ulonglong, 8)]
-    _fields_ = [("A", c_ulonglong, 20), ("B", c_uint, 24)]
-    # _fields_ = [("A", c_uint, 20), ("B", c_uint, 24), ("C", c_uint, 8)]
-    # _fields_ = [("A", c_uint, 20), ("B", c_uint, 24), ("C", c_ulonglong, 8)]
-    # _fields_ = [("A", c_ulonglong, 10), ("B", c_uint, 8), ("C", c_uint, 8)]
-    # _fields_ = [("A", c_uint, 8), ("B", c_uint, 8), ("C", c_uint, 8), ("D", c_uint, 8)]
+    _fields_ = [
+        ("_", c_uint, 32),
+        ("A", c_uint, 20),
+        ("B", c_ulonglong, 24),
+        # ("C", c_ulonglong, 8)
+        ]
 
 def test():
     # for a in [Foo(), Bar()]:
@@ -24,7 +23,7 @@ def test():
         a.B = 0x6789ab
         # a.C = 0xcd
         # a.D = 0xbb
-        print(f"sizeof: {ctypes.sizeof(a)}")
+        print(f"sizeof: {ctypes.sizeof(a)} {ctypes.sizeof(Bar)}")
         print(hex(a.A), hex(a.B))
         # print(hex(a.C))
         # print(hex(a.A), hex(a.B), hex(a.C))

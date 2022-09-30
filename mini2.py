@@ -2,14 +2,9 @@ from ctypes import Structure, c_uint, c_ulonglong, c_ushort
 import ctypes
 
 
-# class Foo(Structure):
-#     _fields_ = [("A", c_uint, 1), ("B", c_ushort, 16)]
-
 
 class Bar(Structure):
-    # _fields_ = [("A", c_ulonglong, 20), ("B", c_uint, 24), ("C", c_ulonglong, 8)]
-    # _fields_ = [("A", c_ulonglong, 20), ("B", c_ulonglong, 24), ("C", c_ulonglong, 8)]
-    _fields_ = [("A", c_ulonglong, 20), ("B", c_uint, 24)]
+    _fields_ = [("A", c_uint, 20), ("B", c_ulonglong, 24), ("C", c_uint, 20)]
     # _fields_ = [("A", c_uint, 20), ("B", c_uint, 24), ("C", c_uint, 8)]
     # _fields_ = [("A", c_uint, 20), ("B", c_uint, 24), ("C", c_ulonglong, 8)]
     # _fields_ = [("A", c_ulonglong, 10), ("B", c_uint, 8), ("C", c_uint, 8)]
@@ -22,10 +17,10 @@ def test():
         a.B = -1
         a.A = 0x12345
         a.B = 0x6789ab
-        # a.C = 0xcd
+        a.C = 0xcd
         # a.D = 0xbb
         print(f"sizeof: {ctypes.sizeof(a)}")
-        print(hex(a.A), hex(a.B))
+        print(hex(a.A), hex(a.B), hex(a.C))
         # print(hex(a.C))
         # print(hex(a.A), hex(a.B), hex(a.C))
 
