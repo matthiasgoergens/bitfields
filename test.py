@@ -28,6 +28,13 @@ types = unsigned + signed
 names = st.lists(st.text(alphabet=string.ascii_letters, min_size=1), unique=True)
 
 
+DPRINT=False
+
+def dprint(*args, **kwargs):
+    if DPRINT:
+        print(*args, **kwargs)
+
+
 @st.composite
 def fields_and_set(draw):
     names_ = draw(names)
@@ -73,11 +80,20 @@ all_types = Union[
     ctypes.c_short, ctypes.c_int, ctypes.c_longlong,
 ]
 
-def round_up(x, y):
-    return ((x - 1) // y + 1) * y
-
 def round_down(x, y):
     return (x // y) * y
+
+def round_up(x, y):
+    return -round_down(-x, y)
+
+def round_up1(x, y):
+    return ((x - 1) // y + 1) * y
+
+class Test_round(unittest.TestCase):
+    @given(x=st.integers(), y=st.integers())
+    def test_round(self, x, y):
+        assume(y > 0)
+        self.assertEqual(round_up1(x, y), round_up(x, y))
 
 member_t = Union[Tuple[str, all_types, int], Tuple[str, all_types]]
 
@@ -107,15 +123,16 @@ def layout(members: members_t):
         def straddles(x):
             return round_down(x, align) < round_down(x + bitsize - 1, align)
         if straddles(offset):
-            print(f"straddles: {offset} {align} {bitsize}")
+            dprint(f"straddles: {offset} {align} {bitsize}")
             offset = round_up(offset, align)
             assert not straddles(offset)
 
         offset += bitsize
-    print(offset)
-    total_size = round_up(offset, 8 * max(alignment(type_) for name, type_, bitsize in members)) // 8
-    print(total_size)
-    return total_size
+    dprint('offset', offset)
+    total_alignment = max((alignment(type_) for name, type_, bitsize in members), default=1)
+    total_size = round_up(offset, 8 * total_alignment) // 8
+    dprint('total_size', total_size)
+    return total_alignment, total_size
 
 
 def c_name(type_: all_types) -> str:
@@ -161,24 +178,18 @@ int main(int argc, char** argv) {{
 }}
 """
 
+def get_from_c(fields):
+    with tempfile.TemporaryDirectory() as d:
+        d: p.Path = p.Path(d)
+        f = d / 'gen.c'
+        out = d / 'a.out'
+        f.write_text(make_c(fields))
+        sp.run((*shlex.split("clang -fsanitize=undefined -Wall -O0 -o"), out, f))
+        proc = sp.run([out], capture_output=True)
+        align_, sizeof_ = map(int, proc.stdout.split())
+        return align_, sizeof_
 
-
-"""
-rm -f a.out; clang -fsanitize=undefined -Wall -Os gen.c && ./a.out
-"""
-
-class Test_C(unittest.TestCase):
-    def test_layout(self):
-        fields = [
-            ("A", c_uint8),
-            ("B", c_uint, 16),
-            ]
-        assert layout(fields) == 4
-        class X(Structure):
-            _fields_ = fields
-        self.assertEqual(4, sizeof(X))
-
-
+class Test_Bitfields(unittest.TestCase):
     @given(fops=fields_and_set())
     def test_roundtrip(self, fops):
         (fields, ops) = fops
@@ -195,26 +206,39 @@ class Test_C(unittest.TestCase):
             j = getattr(b, name)
             self.assertEqual(expect, j)
 
-    @given(fields=fields_strat())
-    def test_c(self, fields):
-        with tempfile.TemporaryDirectory() as d:
-            d: p.Path = p.Path(d)
-            f = d / 'gen.c'
-            out = d / 'a.out'
-            f.write_text(make_c(fields))
-            sp.run((*shlex.split("clang -fsanitize=undefined -Wall -O0 -o"), out, f))
-            proc = sp.run([out], capture_output=True)
-            align_, sizeof_ = map(int, proc.stdout.split())
-            # print(align_, sizeof_)
+    def test_layout(self):
+        """This is a special case of test_c"""
+        fields = [
+            ("A", c_uint8),
+            ("B", c_uint, 16),
+            ]
+        align_, size_ = layout(fields)
+        assert 4 == size_
+        class X(Structure):
+            _fields_ = fields
+        self.assertEqual(4, sizeof(X))
 
-            class X(Structure):
-                _fields_ = fields
-            self.assertEqual(sizeof_, sizeof(X), "sizeof doesn't match")
-            self.assertEqual(align_, alignment(X), "alignment doesn't match")
+    @given(fields=fields_strat())
+    def test_layout_against_c(self, fields):
+        self.assertEqual(get_from_c(fields), layout(fields), "align_, size_")
+        
+
+    @given(fields=fields_strat())
+    def test_structure_against_c(self, fields):
+        align_, sizeof_ = get_from_c(fields)
+        # print(align_, sizeof_)
+
+        class X(Structure):
+            _fields_ = fields
+        self.assertEqual(sizeof_, sizeof(X), "sizeof doesn't match")
+        self.assertEqual(align_, alignment(X), "alignment doesn't match")
 
             # sys.stdout.write(f.read_text())
 
-# if __name__ == "__main__":
+if __name__ == "__main__":
+    DPRINT=True
+    fields=[('A', ctypes.c_ubyte, 1)]
+    print(layout(fields))
 #     # test_layout()
 #     t = Test_C()
 #     # test()
