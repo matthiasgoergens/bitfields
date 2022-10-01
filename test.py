@@ -15,13 +15,15 @@ import sys
 import tempfile
 import pathlib as p
 
-unsigned = [(ctypes.c_ushort, 16), (ctypes.c_uint, 32), (ctypes.c_ulonglong, 64)]
-signed = [(ctypes.c_short, 16), (ctypes.c_int, 32), (ctypes.c_longlong, 64)]
-types = unsigned + signed
+unsigned = [c_uint8, c_uint16, c_uint32, c_uint64]
+signed = [c_int8, c_int16, c_int32, c_int64]
+# unsigned = [(ctypes.c_ushort, 16), (ctypes.c_uint, 32), (ctypes.c_ulonglong, 64)]
+# signed = [(ctypes.c_short, 16), (ctypes.c_int, 32), (ctypes.c_longlong, 64)]
+# types = unsigned + signed
 
-unsigned_types = list(zip(*unsigned))[0]
-signed_types = list(zip(*signed))[0]
-raw_types = unsigned_types + signed_types
+# unsigned_types = list(zip(*unsigned))[0]
+# signed_types = list(zip(*signed))[0]
+types = unsigned + signed
 
 names = st.lists(st.text(alphabet=string.ascii_letters, min_size=1), unique=True)
 
@@ -32,8 +34,11 @@ def fields_and_set(draw):
     ops = []
     results = []
     for name in names_:
-        t, l = draw(st.sampled_from(types))
-        res = (name, t, draw(st.integers(min_value=1, max_value=l)))
+        t = draw(st.sampled_from(types))
+        if draw(st.booleans()):
+            res = (name, t, draw(st.integers(min_value=1, max_value=8*sizeof(t))))
+        else:
+            res = (name, t)
         results.append(res)
         values = draw(st.lists(st.integers()))
         for value in values:
@@ -47,33 +52,20 @@ def fields_strat(draw):
     names_ = draw(names)
     results = []
     for name in names_:
-        t, l = draw(st.sampled_from(types))
-        res = (name, t, draw(st.integers(min_value=1, max_value=l)))
+        t = draw(st.sampled_from(types))
+        if draw(st.booleans()):
+            res = (name, t, draw(st.integers(min_value=1, max_value=8*sizeof(t))))
+        else:
+            res = (name, t)
         results.append(res)
     return results
 
 def fit_in_bits(value, type_, size):
     expect = value % (2**size)
-    if type_ not in unsigned_types:
+    if type_ not in unsigned:
         if expect >= 2 ** (size - 1):
             expect -= 2**size
     return expect
-
-
-@given(fops=fields_and_set())
-def test(fops):
-    (fields, ops) = fops
-
-    class BITS(ctypes.Structure):
-        _fields_ = fields
-
-    b = BITS()
-    for (name, type_, size), value in ops:
-
-        expect = fit_in_bits(value, type_, size)
-        setattr(b, name, value)
-        j = getattr(b, name)
-        assert expect == j, f"{expect} != {j}"
 
 
 all_types = Union[
@@ -126,18 +118,6 @@ def layout(members: members_t):
     return total_size
 
 
-def test_layout():
-    fields = [
-        ("A", c_uint8),
-        ("B", c_uint, 16),
-        ]
-    assert layout(fields) == 4
-    class X(Structure):
-        _fields_ = fields
-    assert sizeof(X) == 4, sizeof(X)
-    print('foo')
-
-
 def c_name(type_: all_types) -> str:
     return {
         c_uint: "unsigned int",
@@ -188,18 +168,41 @@ rm -f a.out; clang -fsanitize=undefined -Wall -Os gen.c && ./a.out
 """
 
 class Test_C(unittest.TestCase):
+    def test_layout(self):
+        fields = [
+            ("A", c_uint8),
+            ("B", c_uint, 16),
+            ]
+        assert layout(fields) == 4
+        class X(Structure):
+            _fields_ = fields
+        self.assertEqual(4, sizeof(X))
+
+
+    @given(fops=fields_and_set())
+    def test_roundtrip(self, fops):
+        (fields, ops) = fops
+
+        class BITS(ctypes.Structure):
+            _fields_ = fields
+
+        b = BITS()
+        for x, value in ops:
+            (name, type_, size) = normalise1(x)
+
+            expect = fit_in_bits(value, type_, size)
+            setattr(b, name, value)
+            j = getattr(b, name)
+            self.assertEqual(expect, j)
+
     @given(fields=fields_strat())
     def test_c(self, fields):
-        # fields = [
-        #     ("A", c_uint8),
-        #     ("B", c_uint, 16),
-        #     ]
         with tempfile.TemporaryDirectory() as d:
             d: p.Path = p.Path(d)
             f = d / 'gen.c'
             out = d / 'a.out'
             f.write_text(make_c(fields))
-            sp.run((*shlex.split("clang -fsanitize=undefined -Wall -Os -o"), out, f))
+            sp.run((*shlex.split("clang -fsanitize=undefined -Wall -O0 -o"), out, f))
             proc = sp.run([out], capture_output=True)
             align_, sizeof_ = map(int, proc.stdout.split())
             # print(align_, sizeof_)
@@ -211,7 +214,8 @@ class Test_C(unittest.TestCase):
 
             # sys.stdout.write(f.read_text())
 
-if __name__ == "__main__":
-    # test_layout()
-    # test()
-    Test_C().test_c()
+# if __name__ == "__main__":
+#     # test_layout()
+#     t = Test_C()
+#     # test()
+#     Test_C().test_c()
