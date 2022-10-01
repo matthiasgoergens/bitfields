@@ -1,10 +1,19 @@
 import ctypes
-from ctypes import alignment, sizeof
+from ctypes import alignment,sizeof, Structure, c_ulonglong
+from ctypes import c_uint, c_uint8, c_uint16, c_uint32, c_uint64, c_ulong
+from ctypes import c_int, c_int8, c_int16, c_int32, c_int64, c_long
 import string
+import shlex
+import unittest
+
 
 from hypothesis import assume, example, given, note
 from hypothesis import strategies as st
 from typing import *
+
+import sys
+import tempfile
+import pathlib as p
 
 unsigned = [(ctypes.c_ushort, 16), (ctypes.c_uint, 32), (ctypes.c_ulonglong, 64)]
 signed = [(ctypes.c_short, 16), (ctypes.c_int, 32), (ctypes.c_longlong, 64)]
@@ -32,6 +41,16 @@ def fields_and_set(draw):
     ops = draw(st.permutations(ops))
     return results, ops
 
+
+@st.composite
+def fields_strat(draw):
+    names_ = draw(names)
+    results = []
+    for name in names_:
+        t, l = draw(st.sampled_from(types))
+        res = (name, t, draw(st.integers(min_value=1, max_value=l)))
+        results.append(res)
+    return results
 
 def fit_in_bits(value, type_, size):
     expect = value % (2**size)
@@ -68,15 +87,19 @@ def round_up(x, y):
 def round_down(x, y):
     return (x // y) * y
 
-def normalise1(member: Union[Tuple[str, all_types, int], Tuple[str, all_types]) -> Tuple[str, all_types, int]:
+member_t = Union[Tuple[str, all_types, int], Tuple[str, all_types]]
+
+def normalise1(member: member_t) -> Tuple[str, all_types, int]:
     # This code contributed by copilot.
     if len(member) == 2:
         return member[0], member[1], 8 * sizeof(member[1])
     else:
         return member
 
+members_t = List[member_t]
+
 # Afterwards, we need to adjust the total size to the maximum alignment of any field.
-def layout(members: List[Union[Tuple[str, all_types, int], Tuple[str, all_types]]]):
+def layout(members: members_t):
     # We want to figure out the sizeof the struct, and the offset of each field.
     
     # For purposes of the algorithm, we can normalize members that are not-bitfields, to be bitfields of the full size of the type.
@@ -92,12 +115,103 @@ def layout(members: List[Union[Tuple[str, all_types, int], Tuple[str, all_types]
         def straddles(x):
             return round_down(x, align) < round_down(x + bitsize - 1, align)
         if straddles(offset):
+            print(f"straddles: {offset} {align} {bitsize}")
             offset = round_up(offset, align)
-            assert not straddles(ofset)
+            assert not straddles(offset)
 
         offset += bitsize
-    return round_up(offset, 8 * max(alignment(type_) for name, type_, bitsize in members)) // 8
+    print(offset)
+    total_size = round_up(offset, 8 * max(alignment(type_) for name, type_, bitsize in members)) // 8
+    print(total_size)
+    return total_size
 
+
+def test_layout():
+    fields = [
+        ("A", c_uint8),
+        ("B", c_uint, 16),
+        ]
+    assert layout(fields) == 4
+    class X(Structure):
+        _fields_ = fields
+    assert sizeof(X) == 4, sizeof(X)
+    print('foo')
+
+
+def c_name(type_: all_types) -> str:
+    return {
+        c_uint: "unsigned int",
+        c_uint8: "uint8_t",
+        c_uint16: "uint16_t",
+        c_uint32: "uint32_t",
+        c_uint64: "uint64_t",
+
+        c_int8: "int8_t",
+        c_int16: "int16_t",
+        c_int32: "int32_t",
+        c_int64: "int64_t",
+    }[type_]
+
+import subprocess as sp
+
+def c_format1(field: member_t) -> str:
+    match field:
+        case (name, type_):
+            return f"    {c_name(type_)} {name};\n"
+        case (name, type_, size):
+            return f"    {c_name(type_)} {name}: {size};\n"
+
+def c_format(fields: members_t) -> str:
+    return ''.join(map(c_format1, fields))
+
+def make_c(fields):
+    return f"""
+#include<stdio.h>
+#include<inttypes.h>
+
+typedef struct
+{{
+{c_format(fields)}
+}} Foo;
+
+int main(int argc, char** argv) {{
+    printf("%lu\\n", __alignof__(Foo));
+    printf("%lu\\n", sizeof(Foo));
+    return 0;
+}}
+"""
+
+
+
+"""
+rm -f a.out; clang -fsanitize=undefined -Wall -Os gen.c && ./a.out
+"""
+
+class Test_C(unittest.TestCase):
+    @given(fields=fields_strat())
+    def test_c(self, fields):
+        # fields = [
+        #     ("A", c_uint8),
+        #     ("B", c_uint, 16),
+        #     ]
+        with tempfile.TemporaryDirectory() as d:
+            d: p.Path = p.Path(d)
+            f = d / 'gen.c'
+            out = d / 'a.out'
+            f.write_text(make_c(fields))
+            sp.run((*shlex.split("clang -fsanitize=undefined -Wall -Os -o"), out, f))
+            proc = sp.run([out], capture_output=True)
+            align_, sizeof_ = map(int, proc.stdout.split())
+            # print(align_, sizeof_)
+
+            class X(Structure):
+                _fields_ = fields
+            self.assertEqual(sizeof_, sizeof(X), "sizeof doesn't match")
+            self.assertEqual(align_, alignment(X), "alignment doesn't match")
+
+            # sys.stdout.write(f.read_text())
 
 if __name__ == "__main__":
-    test()
+    # test_layout()
+    # test()
+    Test_C().test_c()
