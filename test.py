@@ -1,4 +1,5 @@
 import ctypes
+from ctypes import c_char_p
 from ctypes import alignment,sizeof, Structure, c_ulonglong
 from ctypes import c_uint, c_uint8, c_uint16, c_uint32, c_uint64, c_ulong
 from ctypes import c_int, c_int8, c_int16, c_int32, c_int64, c_long
@@ -14,6 +15,12 @@ from typing import *
 import sys
 import tempfile
 import pathlib as p
+
+try:
+    WINFUNCTYPE
+except NameError:
+    # fake to enable this test on Linux
+    WINFUNCTYPE = ctypes.CFUNCTYPE
 
 unsigned = [c_uint8, c_uint16, c_uint32, c_uint64]
 signed = [c_int8, c_int16, c_int32, c_int64]
@@ -255,6 +262,51 @@ class Test_Bitfields(unittest.TestCase):
         self.assertEqual(sizeof_, sizeof(X), "sizeof doesn't match")
         self.assertEqual(align_, alignment(X), "alignment doesn't match")
 
+    def test_structures(self):
+        WNDPROC = WINFUNCTYPE(c_long, c_int, c_int, c_int, c_int)
+
+        def wndproc(hwnd, msg, wParam, lParam):
+            return hwnd + msg + wParam + lParam
+
+        HINSTANCE = c_int
+        HICON = c_int
+        HCURSOR = c_int
+        LPCTSTR = c_char_p
+
+        class WNDCLASS(Structure):
+            _fields_ = [("style", c_uint),
+                        ("lpfnWndProc", WNDPROC),
+                        ("cbClsExtra", c_int),
+                        ("cbWndExtra", c_int),
+                        ("hInstance", HINSTANCE),
+                        ("hIcon", HICON),
+                        ("hCursor", HCURSOR),
+                        ("lpszMenuName", LPCTSTR),
+                        ("lpszClassName", LPCTSTR)]
+
+        wndclass = WNDCLASS()
+        wndclass.lpfnWndProc = WNDPROC(wndproc)
+
+        WNDPROC_2 = WINFUNCTYPE(c_long, c_int, c_int, c_int, c_int)
+
+        # This is no longer true, now that WINFUNCTYPE caches created types internally.
+        ## # CFuncPtr subclasses are compared by identity, so this raises a TypeError:
+        ## self.assertRaises(TypeError, setattr, wndclass,
+        ##                  "lpfnWndProc", WNDPROC_2(wndproc))
+        # instead:
+
+        self.assertIs(WNDPROC, WNDPROC_2)
+        # 'wndclass.lpfnWndProc' leaks 94 references.  Why?
+        self.assertEqual(wndclass.lpfnWndProc(1, 2, 3, 4), 10)
+
+
+        f = wndclass.lpfnWndProc
+
+        del wndclass
+        del wndproc
+
+        self.assertEqual(f(10, 11, 12, 13), 46)
+
 # TODO: perhaps also check that we have the same layout as C?
 # by creating random assignments.
 # and checking via unions?
@@ -262,7 +314,7 @@ class Test_Bitfields(unittest.TestCase):
 if __name__ == "__main__":
     DPRINT=True
     t = Test_Bitfields()
-    t.test_mixed_5_original()
+    t.test_structures()
 
     # fields=[('A', ctypes.c_ubyte, 1)]
     # print(layout(fields))
