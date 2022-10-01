@@ -25,10 +25,10 @@ signed = [c_int8, c_int16, c_int32, c_int64]
 # signed_types = list(zip(*signed))[0]
 types = unsigned + signed
 
-names = st.lists(st.text(alphabet=string.ascii_letters, min_size=1), unique=True)
+names = st.lists(st.text(alphabet=string.ascii_uppercase, min_size=1), unique=True)
 
 
-DPRINT=False
+DPRINT=True
 
 def dprint(*args, **kwargs):
     if DPRINT:
@@ -189,7 +189,29 @@ def get_from_c(fields):
         align_, sizeof_ = map(int, proc.stdout.split())
         return align_, sizeof_
 
+from ctypes import c_ushort
+
 class Test_Bitfields(unittest.TestCase):
+    def test_mixed_5_original(self):
+        class X(Structure):
+            _fields_ = [
+                ('A', c_uint, 1),
+                ('B', c_ushort, 16)]
+        a = X()
+        a.A = 0
+        a.B = 1
+        self.assertEqual(1, a.B)
+
+    def test_mixed_5(self):
+        class X(Structure):
+            _fields_ = [
+                ('A', c_uint32, 1),
+                ('B', c_uint16, 16)]
+        a = X()
+        a.A = 0
+        a.B = 1
+        self.assertEqual(1, a.B)
+
     @given(fops=fields_and_set())
     def test_roundtrip(self, fops):
         (fields, ops) = fops
@@ -233,13 +255,14 @@ class Test_Bitfields(unittest.TestCase):
         self.assertEqual(sizeof_, sizeof(X), "sizeof doesn't match")
         self.assertEqual(align_, alignment(X), "alignment doesn't match")
 
-            # sys.stdout.write(f.read_text())
+# TODO: perhaps also check that we have the same layout as C?
+# by creating random assignments.
+# and checking via unions?
 
 if __name__ == "__main__":
     DPRINT=True
-    fields=[('A', ctypes.c_ubyte, 1)]
-    print(layout(fields))
-#     # test_layout()
-#     t = Test_C()
-#     # test()
-#     Test_C().test_c()
+    t = Test_Bitfields()
+    t.test_mixed_5_original()
+
+    # fields=[('A', ctypes.c_ubyte, 1)]
+    # print(layout(fields))
