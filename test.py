@@ -234,7 +234,8 @@ def old_layout(spec: StructSpec):
     dprint("total_size", total_size)
     return total_alignment, total_size
 
-def layout(spec: StructSpec):
+
+def layout_windows(spec: StructSpec):
     # We want to figure out the sizeof the struct, and the offset of each field.
 
     # For purposes of the algorithm, we can normalize members that are not-bitfields, to be bitfields of the full size of the type.
@@ -242,6 +243,7 @@ def layout(spec: StructSpec):
 
     pack = spec.pack or math.inf
     windows = spec.windows or (spec.pack is not None)
+    assert windows
 
     # Do everything in bits?
     # and worry about alignment.
@@ -249,49 +251,89 @@ def layout(spec: StructSpec):
     alignments = []
     # Need start, size and end of bitfield.  If any.
     # Only needs this for Windows..
-    if windows:
-        bitfield = Bitfield(0, 0, 0)
+
+    bitfield = Bitfield(0, 0, 0)
     for name, type_, bitsize in members:
         dprint(f"name: {name}, type: {type_}, bitsize: {bitsize}")
         align = 8 * min(alignment(type_), pack)
         alignments.append(align)
-        if windows:
-            if 8 * alignment(type_) != bitfield.size or bitfield.end < offset + bitsize:
-                dprint(f"new bitfield. old: {bitfield}")
-                dprint(
-                    f"8 * alignment(type_) { alignment(type_)} ?!= bitfield.size {bitfield.size}"
-                )
-                dprint(
-                    f"bitfield.end {bitfield.end} ?<= offset {offset} + bitsize {bitsize}"
-                )
-                # offset = bitfield.end
-                assert offset <= bitfield.end
-                offset = bitfield.end
-                offset = round_up1(offset, align)
-                bitfield = Bitfield(start=offset, size=8 * alignment(type_))
-                dprint(f"new bitfield. new: {bitfield}")
 
-        # detect alignment straddles
-        def straddles(x):
-            return round_down(x, align) < round_down(x + bitsize - 1, align)
-
-        if spec.pack is None and straddles(offset):
-            assert not windows
-            dprint(f"straddles: {offset} {align} {bitsize}")
-            offset = round_up(offset, align)
-            assert pack is not None or not straddles(offset)
+        if 8 * alignment(type_) != bitfield.size or bitfield.end < offset + bitsize:
+            dprint(f"new bitfield. old: {bitfield}")
+            dprint(
+                f"8 * alignment(type_) { alignment(type_)} ?!= bitfield.size {bitfield.size}"
+            )
+            dprint(
+                f"bitfield.end {bitfield.end} ?<= offset {offset} + bitsize {bitsize}"
+            )
+            # offset = bitfield.end
+            assert offset <= bitfield.end
+            offset = bitfield.end
+            offset = round_up1(offset, align)
+            bitfield = Bitfield(start=offset, size=8 * alignment(type_))
+            dprint(f"new bitfield. new: {bitfield}")
 
         offset += bitsize
-    if windows:
-        note(f"offset: {offset}\tbitfield.end: {bitfield.end}")
-        # in case we had an open bitfield, we need to close it.
-        assert offset <= bitfield.end
-        offset = bitfield.end
+
+    note(f"offset: {offset}\tbitfield.end: {bitfield.end}")
+    # in case we had an open bitfield, we need to close it.
+    assert offset <= bitfield.end
+    offset = bitfield.end
+
     dprint("offset", offset)
     total_alignment = max(alignments, default=8) // 8
     total_size = round_up(offset, 8 * total_alignment) // 8
     dprint("total_size", total_size)
     return total_alignment, total_size
+
+
+def layout_linux(spec: StructSpec):
+    # We want to figure out the sizeof the struct, and the offset of each field.
+
+    # For purposes of the algorithm, we can normalize members that are not-bitfields, to be bitfields of the full size of the type.
+    members: List[Tuple[str, all_types, int]] = list(map(normalise1, spec.fields))
+
+    pack = spec.pack or math.inf
+    windows = spec.windows or (spec.pack is not None)
+    assert not windows
+
+    # Do everything in bits?
+    # and worry about alignment.
+    offset = 0
+    alignments = []
+    # Need start, size and end of bitfield.  If any.
+    # Only needs this for Windows..
+    for name, type_, bitsize in members:
+        dprint(f"name: {name}, type: {type_}, bitsize: {bitsize}")
+        align = 8 * min(alignment(type_), pack)
+        alignments.append(align)
+
+        # detect alignment straddles
+        def straddles(x):
+            return round_down(x, align) < round_down(x + bitsize - 1, align)
+
+        assert spec.pack is None
+        if straddles(offset):
+            dprint(f"straddles: {offset} {align} {bitsize}")
+            offset = round_up(offset, align)
+            assert not straddles(offset)
+
+        offset += bitsize
+    dprint("offset", offset)
+    total_alignment = max(alignments, default=8) // 8
+    total_size = round_up(offset, 8 * total_alignment) // 8
+    dprint("total_size", total_size)
+    return total_alignment, total_size
+
+
+def layout(spec: StructSpec):
+    pack = spec.pack or math.inf
+    windows = spec.windows or (spec.pack is not None)
+    if windows:
+        return layout_windows(spec)
+    else:
+        return layout_linux(spec)
+
 
 def c_name(type_: all_types) -> str:
     return {
