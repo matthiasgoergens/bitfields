@@ -1,4 +1,5 @@
 import ctypes
+import io
 import math
 import pathlib as p
 import shlex
@@ -70,7 +71,13 @@ DPRINT = True
 
 def dprint(*args, **kwargs):
     if DPRINT:
-        print(*args, **kwargs)
+        with io.StringIO() as f:
+            print(*args, file=f, **kwargs, end="", flush=True)
+            s = f.getvalue()
+            try:
+                note(s)
+            except:
+                print(s, flush=True)
 
 
 @st.composite
@@ -185,11 +192,17 @@ def layout(spec: StructSpec):
     # Only needs this for Windows..
     bitfield = Bitfield(0, 0, 0)
     for name, type_, bitsize in members:
+        dprint(f"name: {name}, type: {type_}, bitsize: {bitsize}")
         if windows:
-            if alignment(type_) != bitfield.size or bitfield.end > offset + bitsize:
-                offset = bitfield.end
-                bitfield = Bitfield(start=offset, size=alignment(type_))
-
+            if (
+                8 * alignment(type_) != bitfield.size
+                or bitfield.end <= offset + bitsize
+            ):
+                dprint(f"new bitfield. old: {bitfield}")
+                # offset = bitfield.end
+                offset = max(offset, bitfield.end)
+                bitfield = Bitfield(start=offset, size=8 * alignment(type_))
+                dprint(f"new bitfield. new: {bitfield}")
         align = 8 * min(alignment(type_), pack)
         alignments.append(align)
 
@@ -203,6 +216,9 @@ def layout(spec: StructSpec):
             assert pack is not None or not straddles(offset)
 
         offset += bitsize
+    if windows:
+        note(f"offset: {offset}\tbitfield.end: {bitfield.end}")
+        offset = max(offset, bitfield.end)
     dprint("offset", offset)
     total_alignment = max(alignments, default=8) // 8
     total_size = round_up(offset, 8 * total_alignment) // 8
@@ -325,7 +341,7 @@ class Test_Bitfields(unittest.TestCase):
             ("A", c_uint8),
             ("B", c_uint, 16),
         ]
-        align_, size_ = layout(StructSpec(fields=fields, pack=None))
+        align_, size_ = layout(StructSpec(fields=fields, pack=None, windows=False))
         assert 4 == size_
 
         class X(Structure):
