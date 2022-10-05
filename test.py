@@ -252,38 +252,32 @@ def layout_windows(spec: StructSpec):
     # Need start, size and end of bitfield.  If any.
     # Only needs this for Windows..
 
-    bitfield = Bitfield(0, 0, 0)
+    bitfield = Bitfield(0, 0)
+
+    def close_bitfield():
+        nonlocal offset, bitfield
+        assert offset <= bitfield.end
+        offset = bitfield.end
+
     for name, type_, bitsize in members:
-        dprint(f"name: {name}, type: {type_}, bitsize: {bitsize}")
+        # align is in bits.
         align = 8 * min(alignment(type_), pack)
         alignments.append(align)
 
-        if 8 * alignment(type_) != bitfield.size or bitfield.end < offset + bitsize:
-            dprint(f"new bitfield. old: {bitfield}")
-            dprint(
-                f"8 * alignment(type_) { alignment(type_)} ?!= bitfield.size {bitfield.size}"
-            )
-            dprint(
-                f"bitfield.end {bitfield.end} ?<= offset {offset} + bitsize {bitsize}"
-            )
-            # offset = bitfield.end
+        if bitfield.end < offset + bitsize or 8 * alignment(type_) != bitfield.size:
             assert offset <= bitfield.end
             offset = bitfield.end
+
             offset = round_up1(offset, align)
             bitfield = Bitfield(start=offset, size=8 * alignment(type_))
-            dprint(f"new bitfield. new: {bitfield}")
 
         offset += bitsize
 
-    note(f"offset: {offset}\tbitfield.end: {bitfield.end}")
-    # in case we had an open bitfield, we need to close it.
     assert offset <= bitfield.end
     offset = bitfield.end
 
-    dprint("offset", offset)
     total_alignment = max(alignments, default=8) // 8
     total_size = round_up(offset, 8 * total_alignment) // 8
-    dprint("total_size", total_size)
     return total_alignment, total_size
 
 
@@ -312,17 +306,14 @@ def layout_linux(spec: StructSpec):
         def straddles(x):
             return round_down(x, align) < round_down(x + bitsize - 1, align)
 
-        assert spec.pack is None
         if straddles(offset):
             dprint(f"straddles: {offset} {align} {bitsize}")
             offset = round_up(offset, align)
             assert not straddles(offset)
 
         offset += bitsize
-    dprint("offset", offset)
     total_alignment = max(alignments, default=8) // 8
     total_size = round_up(offset, 8 * total_alignment) // 8
-    dprint("total_size", total_size)
     return total_alignment, total_size
 
 
