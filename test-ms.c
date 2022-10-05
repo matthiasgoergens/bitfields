@@ -3,7 +3,8 @@
 
 typedef struct
 {
-  // uint8_t A: 1;
+  uint16_t B: 1;
+  uint8_t A: 1;
 } Foo;
 
 // typedef union {

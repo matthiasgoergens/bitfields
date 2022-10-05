@@ -6,6 +6,8 @@ from ctypes import c_int, c_int8, c_int16, c_int32, c_int64, c_long
 import string
 import shlex
 import unittest
+from ctypes import *
+from struct import calcsize
 
 
 from hypothesis import assume, example, given, note
@@ -15,12 +17,6 @@ from typing import *
 import sys
 import tempfile
 import pathlib as p
-
-try:
-    WINFUNCTYPE
-except NameError:
-    # fake to enable this test on Linux
-    WINFUNCTYPE = ctypes.CFUNCTYPE
 
 unsigned = [c_uint8, c_uint16, c_uint32, c_uint64]
 signed = [c_int8, c_int16, c_int32, c_int64]
@@ -263,30 +259,24 @@ class Test_Bitfields(unittest.TestCase):
         self.assertEqual(align_, alignment(X), "alignment doesn't match")
 
     def test_structures(self):
-        WNDPROC = WINFUNCTYPE(c_long, c_int, c_int, c_int, c_int)
+        WNDPROC = ctypes.CFUNCTYPE(c_long)
 
-        def wndproc(hwnd, msg, wParam, lParam):
-            return hwnd + msg + wParam + lParam
-
-        HINSTANCE = c_int
-        HICON = c_int
-        HCURSOR = c_int
-        LPCTSTR = c_char_p
+        def wndproc():
+            return 0
 
         class WNDCLASS(Structure):
-            _fields_ = [("style", c_uint),
-                        ("lpfnWndProc", WNDPROC),
-                        ("cbClsExtra", c_int),
-                        ("cbWndExtra", c_int),
-                        ("hInstance", HINSTANCE),
-                        ("hIcon", HICON),
-                        ("hCursor", HCURSOR),
-                        ("lpszMenuName", LPCTSTR),
-                        ("lpszClassName", LPCTSTR)]
+            _fields_ = [
+                        ("lpfnWndProc", WNDPROC)]
+
+        dprint("WNDCLASS align", alignment(WNDCLASS))
+        dprint("WNDCLASS sizeof", sizeof(WNDCLASS))
 
         wndclass = WNDCLASS()
-        wndclass.lpfnWndProc = WNDPROC(wndproc)
-
+        tmp = WNDPROC(wndproc)
+        dprint("WNDPROC align", alignment(WNDPROC))
+        dprint("WNDPROC sizeof", sizeof(WNDPROC))
+        wndclass.lpfnWndProc = tmp
+        return
         WNDPROC_2 = WINFUNCTYPE(c_long, c_int, c_int, c_int, c_int)
 
         # This is no longer true, now that WINFUNCTYPE caches created types internally.
@@ -307,6 +297,36 @@ class Test_Bitfields(unittest.TestCase):
 
         self.assertEqual(f(10, 11, 12, 13), 46)
 
+    formats = {"c": c_char,
+               "b": c_byte,
+               "B": c_ubyte,
+               "h": c_short,
+               "H": c_ushort,
+               "i": c_int,
+               "I": c_uint,
+               "l": c_long,
+               "L": c_ulong,
+               "q": c_longlong,
+               "Q": c_ulonglong,
+               "f": c_float,
+               "d": c_double,
+               }
+
+    def test_unions(self):
+        for code, tp in self.formats.items():
+            class X(ctypes.Union):
+                _fields_ = [("x", c_char),
+                            ("y", tp)]
+            self.assertEqual((sizeof(X), code),
+                                 (calcsize("%c" % (code)), code))
+
+    def test_mixed_2(self):
+        class X(Structure):
+            _fields_ = [("a", c_byte, 4),
+                        ("b", c_int, 32)]
+        self.assertEqual(sizeof(X), alignment(c_int)+sizeof(c_int))
+
+
 # TODO: perhaps also check that we have the same layout as C?
 # by creating random assignments.
 # and checking via unions?
@@ -314,7 +334,8 @@ class Test_Bitfields(unittest.TestCase):
 if __name__ == "__main__":
     DPRINT=True
     t = Test_Bitfields()
-    t.test_structures()
+    t.test_mixed_2()
+    # t.test_structures()
 
     # fields=[('A', ctypes.c_ubyte, 1)]
     # print(layout(fields))
