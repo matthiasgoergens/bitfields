@@ -182,7 +182,7 @@ def layout(spec: StructSpec):
 
         offset += bitsize
     dprint("offset", offset)
-    total_alignment = max(alignments, default=1)
+    total_alignment = max(alignments, default=8) // 8
     total_size = round_up(offset, 8 * total_alignment) // 8
     dprint("total_size", total_size)
     return total_alignment, total_size
