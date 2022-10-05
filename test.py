@@ -6,9 +6,11 @@ from ctypes import c_int, c_int8, c_int16, c_int32, c_int64, c_long
 import string
 import shlex
 import unittest
+import math
 from ctypes import *
 from struct import calcsize
 
+import dataclassy as d
 
 from hypothesis import assume, example, given, note
 from hypothesis import strategies as st
@@ -30,6 +32,18 @@ types = unsigned + signed
 
 names = st.lists(st.text(alphabet=string.ascii_uppercase, min_size=1), unique=True)
 
+all_types = Union[
+    ctypes.c_ushort, ctypes.c_uint, ctypes.c_ulonglong,
+    ctypes.c_short, ctypes.c_int, ctypes.c_longlong,
+]
+
+member_t = Union[Tuple[str, all_types, int], Tuple[str, all_types]]
+
+@d.dataclass
+class StructSpec:
+    pack: Optional[int]
+    # windows: bool
+    fields: List[member_t]
 
 DPRINT=True
 
@@ -70,6 +84,14 @@ def fields_strat(draw):
         results.append(res)
     return results
 
+@st.composite
+def spec_struct(draw):
+    pack = draw(st.sampled_from([None, 1, 2, 4, 8]))
+    fields = draw(fields_strat())
+    # pack = draw(st.one_of(st.none(), st.integers(min_value=1, max_value=8)))
+    return StructSpec(fields = fields, pack=pack)
+
+
 def fit_in_bits(value, type_, size):
     expect = value % (2**size)
     if type_ not in unsigned:
@@ -77,11 +99,6 @@ def fit_in_bits(value, type_, size):
             expect -= 2**size
     return expect
 
-
-all_types = Union[
-    ctypes.c_ushort, ctypes.c_uint, ctypes.c_ulonglong,
-    ctypes.c_short, ctypes.c_int, ctypes.c_longlong,
-]
 
 def round_down(x, y):
     return (x // y) * y
@@ -98,7 +115,9 @@ class Test_round(unittest.TestCase):
         assume(y > 0)
         self.assertEqual(round_up1(x, y), round_up(x, y))
 
-member_t = Union[Tuple[str, all_types, int], Tuple[str, all_types]]
+
+# Hmm, but how do I get my code to pretend we are in Windows land?
+# Needs trickery.  Perhaps recompile for this.
 
 def normalise1(member: member_t) -> Tuple[str, all_types, int]:
     # This code contributed by copilot.
@@ -110,17 +129,21 @@ def normalise1(member: member_t) -> Tuple[str, all_types, int]:
 members_t = List[member_t]
 
 # Afterwards, we need to adjust the total size to the maximum alignment of any field.
-def layout(members: members_t):
+def layout(spec: StructSpec):
     # We want to figure out the sizeof the struct, and the offset of each field.
     
     # For purposes of the algorithm, we can normalize members that are not-bitfields, to be bitfields of the full size of the type.
-    members: List[Tuple[str, all_types, int]] = list(map(normalise1, members))
+    members: List[Tuple[str, all_types, int]] = list(map(normalise1, spec.fields))
+
+    pack = spec.pack or math.inf
 
     # Do everything in bits?
     # and worry about alignment.
     offset = 0
+    alignments = []
     for name, type_, bitsize in members:
-        align = 8 * alignment(type_)
+        align = 8 * min(alignment(type_), pack)
+        alignments.append(align)
 
         # detect alignment straddles
         def straddles(x):
@@ -132,7 +155,7 @@ def layout(members: members_t):
 
         offset += bitsize
     dprint('offset', offset)
-    total_alignment = max((alignment(type_) for name, type_, bitsize in members), default=1)
+    total_alignment = max(alignments, default=1)
     total_size = round_up(offset, 8 * total_alignment) // 8
     dprint('total_size', total_size)
     return total_alignment, total_size
@@ -157,21 +180,28 @@ import subprocess as sp
 def c_format1(field: member_t) -> str:
     match field:
         case (name, type_):
-            return f"    {c_name(type_)} {name};\n"
+            return f"    {c_name(type_)} {name};"
         case (name, type_, size):
-            return f"    {c_name(type_)} {name}: {size};\n"
+            return f"    {c_name(type_)} {name}: {size};"
 
 def c_format(fields: members_t) -> str:
-    return ''.join(map(c_format1, fields))
+    return '\n'.join(map(c_format1, fields))
 
-def make_c(fields):
+def make_c(spec: StructSpec):
+    if spec.pack is None:
+        pragma = ""
+    else:
+        pragma = f"#pragma pack({spec.pack})"
+
     return f"""
 #include<stdio.h>
 #include<inttypes.h>
 
+{pragma}
+
 typedef struct
 {{
-{c_format(fields)}
+{c_format(spec.fields)}
 }} Foo;
 
 int main(int argc, char** argv) {{
@@ -181,12 +211,12 @@ int main(int argc, char** argv) {{
 }}
 """
 
-def get_from_c(fields):
+def get_from_c(spec):
     with tempfile.TemporaryDirectory() as d:
         d: p.Path = p.Path(d)
         f = d / 'gen.c'
         out = d / 'a.out'
-        f.write_text(make_c(fields))
+        f.write_text(make_c(spec))
         sp.run((*shlex.split("clang -fsanitize=undefined -Wall -O0 -o"), out, f))
         proc = sp.run([out], capture_output=True)
         align_, sizeof_ = map(int, proc.stdout.split())
@@ -237,24 +267,30 @@ class Test_Bitfields(unittest.TestCase):
             ("A", c_uint8),
             ("B", c_uint, 16),
             ]
-        align_, size_ = layout(fields)
+        align_, size_ = layout(StructSpec(fields=fields, pack=None))
         assert 4 == size_
         class X(Structure):
             _fields_ = fields
         self.assertEqual(4, sizeof(X))
 
-    @given(fields=fields_strat())
-    def test_layout_against_c(self, fields):
-        self.assertEqual(get_from_c(fields), layout(fields), "align_, size_")
+    @given(spec=spec_struct())
+    def test_layout_against_c(self, spec):
+        note(make_c(spec))
+        self.assertEqual(get_from_c(spec), layout(spec), "align_, size_")
         
 
-    @given(fields=fields_strat())
-    def test_structure_against_c(self, fields):
-        align_, sizeof_ = get_from_c(fields)
+    @given(spec=spec_struct())
+    def test_structure_against_c(self, spec):
+        align_, sizeof_ = get_from_c(spec)
         # print(align_, sizeof_)
 
-        class X(Structure):
-            _fields_ = fields
+        if spec.pack is None:
+            class X(Structure):
+                _fields_ = spec.fields
+        else:
+            class X(Structure):
+                _pack_ = spec.pack
+                _fields_ = spec.fields
         self.assertEqual(sizeof_, sizeof(X), "sizeof doesn't match")
         self.assertEqual(align_, alignment(X), "alignment doesn't match")
 
