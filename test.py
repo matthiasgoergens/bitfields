@@ -253,14 +253,7 @@ def layout_windows(spec: StructSpec):
     # Only needs this for Windows..
 
     bitfield = Bitfield(0, 0)
-
-    def close_bitfield():
-        nonlocal offset, bitfield
-        assert offset <= bitfield.end
-        offset = bitfield.end
-
     for name, type_, bitsize in members:
-        # align is in bits.
         align = 8 * min(alignment(type_), pack)
         alignments.append(align)
 
@@ -269,7 +262,7 @@ def layout_windows(spec: StructSpec):
             offset = bitfield.end
 
             offset = round_up1(offset, align)
-            bitfield = Bitfield(start=offset, size=8 * alignment(type_))
+            bitfield = Bitfield(start=offset, size=8 * sizeof(type_))
 
         offset += bitsize
 
@@ -287,29 +280,18 @@ def layout_linux(spec: StructSpec):
     # For purposes of the algorithm, we can normalize members that are not-bitfields, to be bitfields of the full size of the type.
     members: List[Tuple[str, all_types, int]] = list(map(normalise1, spec.fields))
 
-    pack = spec.pack or math.inf
     windows = spec.windows or (spec.pack is not None)
     assert not windows
 
-    # Do everything in bits?
-    # and worry about alignment.
     offset = 0
     alignments = []
-    # Need start, size and end of bitfield.  If any.
-    # Only needs this for Windows..
     for name, type_, bitsize in members:
-        dprint(f"name: {name}, type: {type_}, bitsize: {bitsize}")
-        align = 8 * min(alignment(type_), pack)
+        align = 8 * alignment(type_)
         alignments.append(align)
 
-        # detect alignment straddles
-        def straddles(x):
-            return round_down(x, align) < round_down(x + bitsize - 1, align)
-
-        if straddles(offset):
-            dprint(f"straddles: {offset} {align} {bitsize}")
-            offset = round_up(offset, align)
-            assert not straddles(offset)
+        offset = max(offset, round_down(offset + bitsize - 1, align))
+        # assert: no alignment straddle
+        assert round_down(offset, align) >= round_down(offset + bitsize - 1, align)
 
         offset += bitsize
     total_alignment = max(alignments, default=8) // 8
