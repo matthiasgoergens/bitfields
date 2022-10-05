@@ -1,4 +1,5 @@
 import ctypes
+from dataclasses import dataclass
 import math
 import pathlib as p
 import shlex
@@ -60,7 +61,7 @@ member_t = Union[Tuple[str, all_types, int], Tuple[str, all_types]]
 @d.dataclass
 class StructSpec:
     pack: Optional[int]
-    # windows: bool
+    windows: bool
     fields: List[member_t]
 
 
@@ -107,10 +108,11 @@ def fields_strat(draw):
 
 @st.composite
 def spec_struct(draw):
+    windows =  draw(st.booleans())
     pack = draw(st.sampled_from([None, 1, 2, 4, 8]))
     fields = draw(fields_strat())
     # pack = draw(st.one_of(st.none(), st.integers(min_value=1, max_value=8)))
-    return StructSpec(fields=fields, pack=pack)
+    return StructSpec(fields=fields, pack=pack, windows=windows)
 
 
 def fit_in_bits(value, type_, size):
@@ -154,6 +156,15 @@ def normalise1(member: member_t) -> Tuple[str, all_types, int]:
 
 members_t = List[member_t]
 
+@d.dataclass
+class Bitfield:
+    start: int
+    size: int
+    end: int = None
+    def __post_init__(self):
+        self.end = self.start + self.size
+
+
 # Afterwards, we need to adjust the total size to the maximum alignment of any field.
 def layout(spec: StructSpec):
     # We want to figure out the sizeof the struct, and the offset of each field.
@@ -162,12 +173,21 @@ def layout(spec: StructSpec):
     members: List[Tuple[str, all_types, int]] = list(map(normalise1, spec.fields))
 
     pack = spec.pack or math.inf
+    windows = spec.windows or (spec.pack is not None)
 
     # Do everything in bits?
     # and worry about alignment.
     offset = 0
     alignments = []
+    # Need start, size and end of bitfield.  If any.
+    # Only needs this for Windows..
+    bitfield = Bitfield(0, 0, 0)
     for name, type_, bitsize in members:
+        if windows:
+            if alignment(type_) != bitfield.size or bitfield.end > offset + bitsize:
+                offset = bitfield.end
+                bitfield = Bitfield(start=offset, size=alignment(type_))
+
         align = 8 * min(alignment(type_), pack)
         alignments.append(align)
 
@@ -218,12 +238,14 @@ def c_format(fields: members_t) -> str:
 
 
 def make_c(spec: StructSpec):
-    if spec.pack is None:
-        pragma = ""
-        attribute = ""
-    else:
+    if spec.pack is not None:
         pragma = f"#pragma pack({spec.pack})"
+    else:
+        pragma = ""
+    if spec.pack is not None or spec.windows:
         attribute = "__attribute__ ((ms_struct))"
+    else:
+        attribute = ""
 
     return f"""
 #include<stdio.h>
