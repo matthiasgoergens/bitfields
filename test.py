@@ -190,7 +190,8 @@ def layout(spec: StructSpec):
     alignments = []
     # Need start, size and end of bitfield.  If any.
     # Only needs this for Windows..
-    bitfield = Bitfield(0, 0, 0)
+    if windows:
+        bitfield = Bitfield(0, 0, 0)
     for name, type_, bitsize in members:
         dprint(f"name: {name}, type: {type_}, bitsize: {bitsize}")
         align = 8 * min(alignment(type_), pack)
@@ -205,21 +206,18 @@ def layout(spec: StructSpec):
                     f"bitfield.end {bitfield.end} ?<= offset {offset} + bitsize {bitsize}"
                 )
                 # offset = bitfield.end
-                offset = max(offset, bitfield.end)
+                assert offset <= bitfield.end
+                offset = bitfield.end
                 offset = round_up1(offset, align)
                 bitfield = Bitfield(start=offset, size=8 * alignment(type_))
                 dprint(f"new bitfield. new: {bitfield}")
 
         # detect alignment straddles
         def straddles(x):
-            if spec.pack is None:
-                return round_down(x, align) < round_down(x + bitsize - 1, align)
-            else:
-                # I don't think this is true?
-                return False
+            return round_down(x, align) < round_down(x + bitsize - 1, align)
 
-        # Need to redo-straddling, because pack.
-        if straddles(offset):
+        if spec.pack is None and straddles(offset):
+            assert not windows
             dprint(f"straddles: {offset} {align} {bitsize}")
             offset = round_up(offset, align)
             assert pack is not None or not straddles(offset)
@@ -227,7 +225,9 @@ def layout(spec: StructSpec):
         offset += bitsize
     if windows:
         note(f"offset: {offset}\tbitfield.end: {bitfield.end}")
-        offset = max(offset, bitfield.end)
+        # in case we had an open bitfield, we need to close it.
+        assert offset <= bitfield.end
+        offset = bitfield.end
     dprint("offset", offset)
     total_alignment = max(alignments, default=8) // 8
     total_size = round_up(offset, 8 * total_alignment) // 8
