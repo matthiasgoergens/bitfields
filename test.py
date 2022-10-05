@@ -194,21 +194,21 @@ def layout(spec: StructSpec):
     for name, type_, bitsize in members:
         dprint(f"name: {name}, type: {type_}, bitsize: {bitsize}")
         align = 8 * min(alignment(type_), pack)
-        alignments.append(align)        
+        alignments.append(align)
         if windows:
-            if (
-                8 * alignment(type_) != bitfield.size
-                or bitfield.end < offset + bitsize
-            ):
+            if 8 * alignment(type_) != bitfield.size or bitfield.end < offset + bitsize:
                 dprint(f"new bitfield. old: {bitfield}")
-                dprint(f"8 * alignment(type_) { alignment(type_)} ?!= bitfield.size {bitfield.size}")
-                dprint(f"bitfield.end {bitfield.end} ?<= offset {offset} + bitsize {bitsize}")
+                dprint(
+                    f"8 * alignment(type_) { alignment(type_)} ?!= bitfield.size {bitfield.size}"
+                )
+                dprint(
+                    f"bitfield.end {bitfield.end} ?<= offset {offset} + bitsize {bitsize}"
+                )
                 # offset = bitfield.end
                 offset = max(offset, bitfield.end)
                 offset = round_up1(offset, align)
                 bitfield = Bitfield(start=offset, size=8 * alignment(type_))
                 dprint(f"new bitfield. new: {bitfield}")
-
 
         # detect alignment straddles
         def straddles(x):
