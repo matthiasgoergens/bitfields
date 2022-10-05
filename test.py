@@ -175,7 +175,7 @@ class Bitfield:
 
 
 # Afterwards, we need to adjust the total size to the maximum alignment of any field.
-def layout(spec: StructSpec):
+def old_layout(spec: StructSpec):
     # We want to figure out the sizeof the struct, and the offset of each field.
 
     # For purposes of the algorithm, we can normalize members that are not-bitfields, to be bitfields of the full size of the type.
@@ -234,6 +234,64 @@ def layout(spec: StructSpec):
     dprint("total_size", total_size)
     return total_alignment, total_size
 
+def layout(spec: StructSpec):
+    # We want to figure out the sizeof the struct, and the offset of each field.
+
+    # For purposes of the algorithm, we can normalize members that are not-bitfields, to be bitfields of the full size of the type.
+    members: List[Tuple[str, all_types, int]] = list(map(normalise1, spec.fields))
+
+    pack = spec.pack or math.inf
+    windows = spec.windows or (spec.pack is not None)
+
+    # Do everything in bits?
+    # and worry about alignment.
+    offset = 0
+    alignments = []
+    # Need start, size and end of bitfield.  If any.
+    # Only needs this for Windows..
+    if windows:
+        bitfield = Bitfield(0, 0, 0)
+    for name, type_, bitsize in members:
+        dprint(f"name: {name}, type: {type_}, bitsize: {bitsize}")
+        align = 8 * min(alignment(type_), pack)
+        alignments.append(align)
+        if windows:
+            if 8 * alignment(type_) != bitfield.size or bitfield.end < offset + bitsize:
+                dprint(f"new bitfield. old: {bitfield}")
+                dprint(
+                    f"8 * alignment(type_) { alignment(type_)} ?!= bitfield.size {bitfield.size}"
+                )
+                dprint(
+                    f"bitfield.end {bitfield.end} ?<= offset {offset} + bitsize {bitsize}"
+                )
+                # offset = bitfield.end
+                assert offset <= bitfield.end
+                offset = bitfield.end
+                offset = round_up1(offset, align)
+                bitfield = Bitfield(start=offset, size=8 * alignment(type_))
+                dprint(f"new bitfield. new: {bitfield}")
+
+        # detect alignment straddles
+        def straddles(x):
+            return round_down(x, align) < round_down(x + bitsize - 1, align)
+
+        if spec.pack is None and straddles(offset):
+            assert not windows
+            dprint(f"straddles: {offset} {align} {bitsize}")
+            offset = round_up(offset, align)
+            assert pack is not None or not straddles(offset)
+
+        offset += bitsize
+    if windows:
+        note(f"offset: {offset}\tbitfield.end: {bitfield.end}")
+        # in case we had an open bitfield, we need to close it.
+        assert offset <= bitfield.end
+        offset = bitfield.end
+    dprint("offset", offset)
+    total_alignment = max(alignments, default=8) // 8
+    total_size = round_up(offset, 8 * total_alignment) // 8
+    dprint("total_size", total_size)
+    return total_alignment, total_size
 
 def c_name(type_: all_types) -> str:
     return {
@@ -357,6 +415,11 @@ class Test_Bitfields(unittest.TestCase):
             _fields_ = fields
 
         self.assertEqual(4, sizeof(X))
+
+    @given(spec=spec_struct())
+    def test_layout_against_old(self, spec):
+        note(make_c(spec))
+        self.assertEqual(old_layout(spec), layout(spec), "align_, size_")
 
     @given(spec=spec_struct())
     def test_layout_against_c(self, spec):
