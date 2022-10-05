@@ -1,5 +1,4 @@
 import ctypes
-from dataclasses import dataclass
 import math
 import pathlib as p
 import shlex
@@ -27,6 +26,7 @@ from ctypes import (
     c_ulonglong,
     sizeof,
 )
+from dataclasses import dataclass
 from struct import calcsize
 from typing import *
 
@@ -108,7 +108,7 @@ def fields_strat(draw):
 
 @st.composite
 def spec_struct(draw):
-    windows =  draw(st.booleans())
+    windows = draw(st.booleans())
     pack = draw(st.sampled_from([None, 1, 2, 4, 8]))
     fields = draw(fields_strat())
     # pack = draw(st.one_of(st.none(), st.integers(min_value=1, max_value=8)))
@@ -156,11 +156,13 @@ def normalise1(member: member_t) -> Tuple[str, all_types, int]:
 
 members_t = List[member_t]
 
+
 @d.dataclass
 class Bitfield:
     start: int
     size: int
     end: int = None
+
     def __post_init__(self):
         self.end = self.start + self.size
 
