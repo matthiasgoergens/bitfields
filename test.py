@@ -121,6 +121,14 @@ def spec_struct(draw):
     # pack = draw(st.one_of(st.none(), st.integers(min_value=1, max_value=8)))
     return StructSpec(fields=fields, pack=pack, windows=windows)
 
+@st.composite
+def spec_struct_linux(draw):
+    windows = False # draw(st.booleans())
+    pack = None # draw(st.sampled_from([None, 1, 2, 4, 8]))
+    fields = draw(fields_strat())
+    # pack = draw(st.one_of(st.none(), st.integers(min_value=1, max_value=8)))
+    return StructSpec(fields=fields, pack=pack, windows=windows)
+
 
 def fit_in_bits(value, type_, size):
     expect = value % (2**size)
@@ -257,11 +265,11 @@ def layout_windows(spec: StructSpec):
         align = 8 * min(alignment(type_), pack)
         alignments.append(align)
 
-        if bitfield.end < offset + bitsize or 8 * alignment(type_) != bitfield.size:
+        if bitfield.end < offset + bitsize or 8 * sizeof(type_) != bitfield.size:
             assert offset <= bitfield.end
             offset = bitfield.end
 
-            offset = round_up1(offset, align)
+            offset = round_up(offset, align)
             bitfield = Bitfield(start=offset, size=8 * sizeof(type_))
 
         offset += bitsize
@@ -441,8 +449,12 @@ class Test_Bitfields(unittest.TestCase):
         note(make_c(spec))
         self.assertEqual(get_from_c(spec), layout(spec), "align_, size_")
 
+    # TODO: make general!
     @given(spec=spec_struct())
-    def _test_structure_against_c(self, spec):
+    # @given(spec=spec_struct_linux())
+    def test_structure_against_c(self, spec):
+        assume(not (spec.pack is None and spec.windows))
+
         align_, sizeof_ = get_from_c(spec)
         # print(align_, sizeof_)
 
@@ -452,13 +464,25 @@ class Test_Bitfields(unittest.TestCase):
                 _fields_ = spec.fields
 
         else:
-
+            print(spec, flush=True, file=open('log.txt', 'a'))
             class X(Structure):
                 _pack_ = spec.pack
                 _fields_ = spec.fields
 
         self.assertEqual(sizeof_, sizeof(X), "sizeof doesn't match")
         self.assertEqual(align_, alignment(X), "alignment doesn't match")
+
+    def test_struct_example(self):
+        class X(Structure):
+            _pack_ = 1
+            _fields_ = [('A', c_uint8)]
+        # StructSpec(pack=1, windows=False, fields=[('A', <class 'ctypes.c_ubyte'>)])
+
+    def test_struct_example2(self):
+        class X(Structure):
+            _pack_ = 1
+            _fields_ = fields=[('IRF', ctypes.c_int, 17), ('OLIEG', c_ushort), ('EMZTTMFWIYXUIXRFEVFMSK', ctypes.c_uint, 19), ('VDTFOKUTVGDUBYK', ctypes.c_byte)]
+
 
     def test_structures(self):
         WNDPROC = ctypes.CFUNCTYPE(c_long)
@@ -533,10 +557,16 @@ class Test_Bitfields(unittest.TestCase):
 # and checking via unions?
 
 if __name__ == "__main__":
+    import tracemalloc
+
+    tracemalloc.start()
     DPRINT = True
     t = Test_Bitfields()
-    t.test_mixed_2()
+    # t.test_mixed_2()
     # t.test_structures()
+    t.test_struct_example()
+    t.test_struct_example2()
+    # t.test_structure_against_c()
 
     # fields=[('A', ctypes.c_ubyte, 1)]
     # print(layout(fields))
