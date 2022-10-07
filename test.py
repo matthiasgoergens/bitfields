@@ -1,6 +1,7 @@
 import ctypes
 import io
 import math
+import datetime
 import pathlib as p
 import shlex
 import string
@@ -32,7 +33,7 @@ from struct import calcsize
 from typing import *
 
 import dataclassy as d
-from hypothesis import assume, example, given, note
+from hypothesis import assume, example, given, note, settings, Verbosity
 from hypothesis import strategies as st
 
 unsigned = [c_uint8, c_uint16, c_uint32, c_uint64]
@@ -374,6 +375,24 @@ int main(int argc, char** argv) {{
 }}
 """
 
+def get_from_c_big_endian(spec):
+    with tempfile.TemporaryDirectory() as d:
+        d: p.Path = p.Path(d)
+        f = d / "gen.c"
+        out = d / "a.out"
+        f.write_text(make_c(spec))
+
+        #         --name big_endian_test
+        pre = shlex.split(f"""
+        docker run --platform linux/s390x
+        --rm
+        --mount type=bind,source="{d}",target={d}
+        big-endian
+        """)
+        sp.run((*pre, *shlex.split("clang -fsanitize=undefined -Wall -O0 -o"), out, f))
+        proc = sp.run([*pre, out], capture_output=True)
+        align_, sizeof_ = map(int, proc.stdout.split())
+        return align_, sizeof_
 
 def get_from_c(spec):
     with tempfile.TemporaryDirectory() as d:
@@ -445,9 +464,16 @@ class Test_Bitfields(unittest.TestCase):
         self.assertEqual(old_layout(spec), layout(spec), "align_, size_")
 
     @given(spec=spec_struct())
+    @settings(deadline=datetime.timedelta(seconds=1))
     def test_layout_against_c(self, spec):
         note(make_c(spec))
         self.assertEqual(get_from_c(spec), layout(spec), "align_, size_")
+
+    @given(spec=spec_struct_linux())
+    @settings(deadline=datetime.timedelta(seconds=10))
+    def test_layout_against_c_big_endian(self, spec):
+        note(make_c(spec))
+        self.assertEqual(get_from_c_big_endian(spec), layout(spec), "align_, size_")
 
     # TODO: make general!
     @given(spec=spec_struct())
@@ -564,9 +590,10 @@ if __name__ == "__main__":
     t = Test_Bitfields()
     # t.test_mixed_2()
     # t.test_structures()
-    t.test_struct_example()
-    t.test_struct_example2()
+    # t.test_struct_example()
+    # t.test_struct_example2()
     # t.test_structure_against_c()
+    t.test_layout_against_c_big_endian()
 
     # fields=[('A', ctypes.c_ubyte, 1)]
     # print(layout(fields))
