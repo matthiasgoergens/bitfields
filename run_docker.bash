@@ -7,13 +7,12 @@ set -o pipefail
 # --detach \
 #   --interactive --tty \
 
-# docker run --platform linux/s390x \
-
-docker run --platform linux/amd64 \
+docker run --platform linux/s390x \
   --rm \
   --name big_endian_test \
   --mount type=bind,source="$(pwd)",target=/bitfields \
-  big-endian
+  big-endian \
+  lscpu
 
 # file=$1
 # echo File: $file
