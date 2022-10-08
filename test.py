@@ -413,15 +413,27 @@ int main(int argc, char** argv) {{
 """
 
 
-def make_c_out(spec: StructSpec):
+def make_c_out(spec: StructSpec, endian=None):
+    # scalar_storage_order("big-endian"))
+#     struct __attribute__((packed, scalar_storage_order("big-endian"))) mystruct {
+#     uint16_t a;
+#     uint32_t b;
+#     uint64_t c;
+# };
     if spec.pack is not None:
         pragma = f"#pragma pack({spec.pack})"
     else:
         pragma = ""
+    attributes = []
     if spec.pack is not None or spec.windows:
-        attribute = "__attribute__ ((ms_struct))"
-    else:
-        attribute = ""
+        attributes.append('ms_struct')
+    #     attribute = "__attribute__ ((ms_struct))"
+    # else:
+    #     attribute = ""
+    if endian is not None:
+        attributes.append(f'scalar_storage_order("{endian}")')
+
+    attribute = f"""__attribute__ (({", ".join(attributes)}))"""
 
     return f"""
 #include<stdio.h>
@@ -482,7 +494,6 @@ def get_from_c_out_big_endian(spec):
         note(source)
         f.write_text(source)
 
-        #         --name big_endian_test
         pre = shlex.split(
             f"""
         docker run --platform linux/s390x
@@ -499,6 +510,23 @@ def get_from_c_out_big_endian(spec):
         proc = sp.run([*pre, out], capture_output=True, check=True)
         return proc.stdout
 
+
+def get_from_c_out_big_endian_fake(spec):
+    with tempfile.TemporaryDirectory() as d:
+        d: p.Path = p.Path(d)
+        f = d / "gen.c"
+        out = d / "a.out"
+        source = make_c_out(spec, endian="big-endian")
+        note(source)
+        f.write_text(source)
+
+        cmd = (*shlex.split("gcc -fsanitize=undefined -Wall -O0 -o"), out, f)
+        dprint(shlex.join(map(str, cmd)))
+        cc = sp.run(cmd, check=True, capture_output=True)
+        dprint(cc.stdout)
+        dprint(cc.stderr)
+        proc = sp.run([out], capture_output=True, check=True)
+        return proc.stdout
 
 def get_from_c(spec):
     with tempfile.TemporaryDirectory() as d:
@@ -645,6 +673,13 @@ class Test_Bitfields(unittest.TestCase):
         cc = {f.name: getattr(from_c, f.name) for f in spec.fields}
         self.assertEqual(cc, pp)
 
+    @given(spec=spec_struct())
+    @settings(deadline=datetime.timedelta(seconds=10))
+    def test_fake_against_c_out_big_endian(self, spec):
+        out1 = get_from_c_out_big_endian(spec)
+        out2 = get_from_c_out_big_endian_fake(spec)
+        self.assertEqual(out1, out2)
+
     def test_struct_example(self):
         class X(Structure):
             _pack_ = 1
@@ -743,7 +778,8 @@ if __name__ == "__main__":
     DPRINT = True
     t = Test_Bitfields()
     # t.test_structure_against_c_out()
-    t.test_structure_against_c_out_big_endian()
+    t.test_fake_against_c_out_big_endian()
+    # t.test_structure_against_c_out_big_endian()
     # t.test_mixed_2()
     # t.test_structures()
     # t.test_struct_example()
