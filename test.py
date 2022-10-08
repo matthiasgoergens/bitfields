@@ -117,6 +117,23 @@ class StructSpec:
 
         return X
 
+    def to_struct_big_endian(self):
+        # TODO: support Windows mode on Linux?
+        if self.pack is None:
+
+            class X(ctypes.BigEndianStructure):
+                _ms_struct_ = self.windows
+                _fields_ = self.to_fields()
+
+        else:
+
+            class X(ctypes.BigEndianStructure):
+                _ms_struct_ = self.windows
+                _pack_ = self.pack
+                _fields_ = self.to_fields()
+
+        return X
+
     def assignments(self, pname):
         return "\n".join(f.assignment(pname) for f in self.fields)
 
@@ -451,9 +468,36 @@ def get_from_c_big_endian(spec):
         """
         )
         sp.run((*pre, *shlex.split("clang -fsanitize=undefined -Wall -O0 -o"), out, f))
-        proc = sp.run([*pre, out], capture_output=True)
+        proc = sp.run([*pre, out], capture_output=True, check=True)
         align_, sizeof_ = map(int, proc.stdout.split())
         return align_, sizeof_
+
+
+def get_from_c_out_big_endian(spec):
+    with tempfile.TemporaryDirectory() as d:
+        d: p.Path = p.Path(d)
+        f = d / "gen.c"
+        out = d / "a.out"
+        source = make_c_out(spec)
+        note(source)
+        f.write_text(source)
+
+        #         --name big_endian_test
+        pre = shlex.split(
+            f"""
+        docker run --platform linux/s390x
+        --rm
+        --mount type=bind,source="{d}",target={d}
+        big-endian
+        """
+        )
+        cmd = (*pre, *shlex.split("clang -fsanitize=undefined -Wall -O0 -o"), out, f)
+        dprint(shlex.join(map(str, cmd)))
+        cc = sp.run(cmd, check=True, capture_output=True)
+        dprint(cc.stdout)
+        dprint(cc.stderr)
+        proc = sp.run([*pre, out], capture_output=True, check=True)
+        return proc.stdout
 
 
 def get_from_c(spec):
@@ -575,12 +619,23 @@ class Test_Bitfields(unittest.TestCase):
         self.assertEqual(align_, alignment(X), "alignment doesn't match")
 
     @given(spec=spec_struct())
-    # @given(spec=spec_struct_linux())
     def test_structure_against_c_out(self, spec):
-        # assume(not (spec.pack is None and spec.windows))
-
         out = get_from_c_out(spec)
         X = spec.to_struct()  #
+        buf = ctypes.create_string_buffer(out, len(out))
+        note(f"buf: {repr(buf)}")
+        self.assertEqual(len(out), sizeof(X))
+        from_c = X.from_buffer(buf)
+        from_p = X(**{f.name: f.value for f in spec.fields})
+        pp = {f.name: getattr(from_p, f.name) for f in spec.fields}
+        cc = {f.name: getattr(from_c, f.name) for f in spec.fields}
+        self.assertEqual(cc, pp)
+
+    @given(spec=spec_struct())
+    @settings(deadline=datetime.timedelta(seconds=10), verbosity=Verbosity.verbose)
+    def test_structure_against_c_out_big_endian(self, spec):
+        out = get_from_c_out_big_endian(spec)
+        X = spec.to_struct_big_endian()  #
         buf = ctypes.create_string_buffer(out, len(out))
         note(f"buf: {repr(buf)}")
         self.assertEqual(len(out), sizeof(X))
@@ -687,7 +742,8 @@ if __name__ == "__main__":
     tracemalloc.start()
     DPRINT = True
     t = Test_Bitfields()
-    t.test_structure_against_c_out()
+    # t.test_structure_against_c_out()
+    t.test_structure_against_c_out_big_endian()
     # t.test_mixed_2()
     # t.test_structures()
     # t.test_struct_example()
