@@ -1,7 +1,7 @@
 import ctypes
+import datetime
 import io
 import math
-import datetime
 import pathlib as p
 import shlex
 import string
@@ -33,10 +33,11 @@ from struct import calcsize
 from typing import *
 
 import dataclassy as d
-from hypothesis import assume, example, given, note, settings, Verbosity
+from hypothesis import Verbosity, assume, example, given, note, settings
 from hypothesis import strategies as st
 
 DPRINT = True
+
 
 def dprint(*args, **kwargs):
     if DPRINT:
@@ -47,6 +48,7 @@ def dprint(*args, **kwargs):
                 note(s)
             except:
                 print(s, flush=True)
+
 
 unsigned = [c_uint8, c_uint16, c_uint32, c_uint64]
 signed = [c_int8, c_int16, c_int32, c_int64]
@@ -71,6 +73,7 @@ all_types = Union[
 
 member_t = Union[Tuple[str, all_types, int], Tuple[str, all_types]]
 
+
 @d.dataclass
 class MemberSpec:
     name: str
@@ -84,6 +87,7 @@ class MemberSpec:
         else:
             return (self.name, self.type, self.bitsize)
 
+
 @d.dataclass
 class StructSpec:
     pack: Optional[int]
@@ -96,18 +100,25 @@ class StructSpec:
     def to_struct(self):
         # TODO: support Windows mode on Linux?
         if self.pack is None:
+
             class X(ctypes.Structure):
                 _fields_ = self.to_fields()
+
         else:
+
             class X(ctypes.Structure):
                 _pack_ = self.pack
                 _fields_ = self.to_fields()
+
         return X
+
 
 @st.composite
 def member(draw, name: str):
     type_ = draw(st.sampled_from(types))
-    bitsize = draw(st.one_of(st.none(), st.integers(min_value=1, max_value=8 * sizeof(type_))))
+    bitsize = draw(
+        st.one_of(st.none(), st.integers(min_value=1, max_value=8 * sizeof(type_)))
+    )
     # Value might be bigger than what we can fit in the type, that's fine.
     value = draw(st.integers())
     return MemberSpec(name=name, type=type_, bitsize=bitsize, value=value)
@@ -116,6 +127,7 @@ def member(draw, name: str):
 @st.composite
 def fields(draw):
     return [draw(member(name)) for name in draw(names)]
+
 
 @st.composite
 def spec_struct(draw):
@@ -129,6 +141,7 @@ def spec_struct(draw):
 def spec_struct_linux(draw):
     windows = draw(st.booleans())
     return StructSpec(fields=draw(fields()), pack=None, windows=False)
+
 
 def fit_in_bits(value, type_, size):
     expect = value % (2**size)
@@ -374,8 +387,10 @@ int main(int argc, char** argv) {{
 }}
 """
 
+
 """
 """
+
 
 def get_from_c_big_endian(spec):
     with tempfile.TemporaryDirectory() as d:
@@ -383,18 +398,21 @@ def get_from_c_big_endian(spec):
         f = d / "gen.c"
         out = d / "a.out"
         f.write_text(make_c(spec))
-        
+
         #         --name big_endian_test
-        pre = shlex.split(f"""
+        pre = shlex.split(
+            f"""
         docker run --platform linux/s390x
         --rm
         --mount type=bind,source="{d}",target={d}
         big-endian
-        """)
+        """
+        )
         sp.run((*pre, *shlex.split("clang -fsanitize=undefined -Wall -O0 -o"), out, f))
         proc = sp.run([*pre, out], capture_output=True)
         align_, sizeof_ = map(int, proc.stdout.split())
         return align_, sizeof_
+
 
 def get_from_c(spec):
     with tempfile.TemporaryDirectory() as d:
@@ -489,7 +507,8 @@ class Test_Bitfields(unittest.TestCase):
                 _fields_ = spec.to_fields()
 
         else:
-            print(spec, flush=True, file=open('log.txt', 'a'))
+            print(spec, flush=True, file=open("log.txt", "a"))
+
             class X(Structure):
                 _pack_ = spec.pack
                 _fields_ = spec.to_fields()
@@ -500,14 +519,19 @@ class Test_Bitfields(unittest.TestCase):
     def test_struct_example(self):
         class X(Structure):
             _pack_ = 1
-            _fields_ = [('A', c_uint8)]
+            _fields_ = [("A", c_uint8)]
+
         # StructSpec(pack=1, windows=False, fields=[('A', <class 'ctypes.c_ubyte'>)])
 
     def test_struct_example2(self):
         class X(Structure):
             _pack_ = 1
-            _fields_ = [('IRF', ctypes.c_int, 17), ('OLIEG', c_ushort), ('EMZTTMFWIYXUIXRFEVFMSK', ctypes.c_uint, 19), ('VDTFOKUTVGDUBYK', ctypes.c_byte)]
-
+            _fields_ = [
+                ("IRF", ctypes.c_int, 17),
+                ("OLIEG", c_ushort),
+                ("EMZTTMFWIYXUIXRFEVFMSK", ctypes.c_uint, 19),
+                ("VDTFOKUTVGDUBYK", ctypes.c_byte),
+            ]
 
     def test_structures(self):
         WNDPROC = ctypes.CFUNCTYPE(c_long)
