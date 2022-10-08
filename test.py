@@ -36,6 +36,18 @@ import dataclassy as d
 from hypothesis import assume, example, given, note, settings, Verbosity
 from hypothesis import strategies as st
 
+DPRINT = True
+
+def dprint(*args, **kwargs):
+    if DPRINT:
+        with io.StringIO() as f:
+            print(*args, file=f, **kwargs, end="", flush=True)
+            s = f.getvalue()
+            try:
+                note(s)
+            except:
+                print(s, flush=True)
+
 unsigned = [c_uint8, c_uint16, c_uint32, c_uint64]
 signed = [c_int8, c_int16, c_int32, c_int64]
 # unsigned = [(ctypes.c_ushort, 16), (ctypes.c_uint, 32), (ctypes.c_ulonglong, 64)]
@@ -64,6 +76,13 @@ class MemberSpec:
     name: str
     type: all_types
     bitsize: Optional[int]
+    value: Optional[int]
+
+    def to_field(self):
+        if self.bitsize is None:
+            return (self.name, self.type)
+        else:
+            return (self.name, self.type, self.bitsize)
 
 @d.dataclass
 class StructSpec:
@@ -71,70 +90,41 @@ class StructSpec:
     windows: bool
     fields: List[MemberSpec]
 
+    def to_fields(self):
+        return [f.to_field() for f in self.fields]
 
-DPRINT = True
+    def to_struct(self):
+        # TODO: support Windows mode on Linux?
+        class X(ctypes.structure):
+            _pack_ = self.pack
+            _fields_ = self.to_fields()
+        return X
 
-
-def dprint(*args, **kwargs):
-    if DPRINT:
-        with io.StringIO() as f:
-            print(*args, file=f, **kwargs, end="", flush=True)
-            s = f.getvalue()
-            try:
-                note(s)
-            except:
-                print(s, flush=True)
+@st.composite
+def member(draw, name: str):
+    type_ = draw(st.sampled_from(types))
+    bitsize = draw(st.one_of(st.none(), st.integers(min_value=1, max_value=8 * sizeof(type_))))
+    # Value might be bigger than what we can fit in the type, that's fine.
+    value = draw(st.integers())
+    return MemberSpec(name=name, type=type_, bitsize=bitsize, value=value)
 
 
 @st.composite
-def fields_and_set(draw):
-    names_ = draw(names)
-    ops = []
-    results = []
-    for name in names_:
-        t = draw(st.sampled_from(types))
-        if draw(st.booleans()):
-            res = (name, t, draw(st.integers(min_value=1, max_value=8 * sizeof(t))))
-        else:
-            res = (name, t)
-        results.append(res)
-        values = draw(st.lists(st.integers()))
-        for value in values:
-            ops.append((res, value))
-    ops = draw(st.permutations(ops))
-    return results, ops
-
-
-@st.composite
-def fields_strat(draw):
-    names_ = draw(names)
-    results = []
-    for name in names_:
-        t = draw(st.sampled_from(types))
-        if draw(st.booleans()):
-            res = (name, t, draw(st.integers(min_value=1, max_value=8 * sizeof(t))))
-        else:
-            res = (name, t)
-        results.append(res)
-    return results
-
+def fields(draw):
+    return [draw(member(name)) for name in draw(names)]
 
 @st.composite
 def spec_struct(draw):
     windows = draw(st.booleans())
     pack = draw(st.sampled_from([None, 1, 2, 4, 8]))
-    fields = draw(fields_strat())
-    # pack = draw(st.one_of(st.none(), st.integers(min_value=1, max_value=8)))
-    return StructSpec(fields=fields, pack=pack, windows=windows)
+    fields_ = draw(fields())
+    return StructSpec(fields=fields_, pack=pack, windows=windows)
+
 
 @st.composite
 def spec_struct_linux(draw):
-    windows = False # draw(st.booleans())
-    pack = None # draw(st.sampled_from([None, 1, 2, 4, 8]))
-    fields = draw(fields_strat())
-    # pack = draw(st.one_of(st.none(), st.integers(min_value=1, max_value=8)))
-    return StructSpec(fields=fields, pack=pack, windows=windows)
-
+    windows = draw(st.booleans())
+    return StructSpec(fields=draw(fields()), pack=None, windows=False)
 
 def fit_in_bits(value, type_, size):
     expect = value % (2**size)
@@ -193,7 +183,7 @@ def old_layout(spec: StructSpec):
     # We want to figure out the sizeof the struct, and the offset of each field.
 
     # For purposes of the algorithm, we can normalize members that are not-bitfields, to be bitfields of the full size of the type.
-    members: List[Tuple[str, all_types, int]] = list(map(normalise1, spec.fields))
+    members: List[Tuple[str, all_types, int]] = list(map(normalise1, spec.to_fields()))
 
     pack = spec.pack or math.inf
     windows = spec.windows or (spec.pack is not None)
@@ -253,7 +243,7 @@ def layout_windows(spec: StructSpec):
     # We want to figure out the sizeof the struct, and the offset of each field.
 
     # For purposes of the algorithm, we can normalize members that are not-bitfields, to be bitfields of the full size of the type.
-    members: List[Tuple[str, all_types, int]] = list(map(normalise1, spec.fields))
+    members: List[Tuple[str, all_types, int]] = list(map(normalise1, spec.to_fields()))
 
     pack = spec.pack or math.inf
     windows = spec.windows or (spec.pack is not None)
@@ -292,7 +282,7 @@ def layout_linux(spec: StructSpec):
     # We want to figure out the sizeof the struct, and the offset of each field.
 
     # For purposes of the algorithm, we can normalize members that are not-bitfields, to be bitfields of the full size of the type.
-    members: List[Tuple[str, all_types, int]] = list(map(normalise1, spec.fields))
+    members: List[Tuple[str, all_types, int]] = list(map(normalise1, spec.to_fields()))
 
     windows = spec.windows or (spec.pack is not None)
     assert not windows
@@ -370,7 +360,7 @@ def make_c(spec: StructSpec):
 typedef struct
 {attribute}
 {{
-{c_format(spec.fields)}
+{c_format(spec.to_fields())}
 }} Foo;
 
 int main(int argc, char** argv) {{
@@ -436,27 +426,24 @@ class Test_Bitfields(unittest.TestCase):
         a.B = 1
         self.assertEqual(1, a.B)
 
-    @given(fops=fields_and_set())
-    def test_roundtrip(self, fops):
-        (fields, ops) = fops
-
-        class BITS(ctypes.Structure):
-            _fields_ = fields
+    @given(spec=spec_struct())
+    def test_roundtrip(self, spec):
+        BITS = spec.to_struct()
 
         b = BITS()
-        for x, value in ops:
-            (name, type_, size) = normalise1(x)
+        for field in spec.fields:
+            (name, type_, size) = normalise1(field.to_field())
 
-            expect = fit_in_bits(value, type_, size)
-            setattr(b, name, value)
+            expect = fit_in_bits(field.value, type_, size)
+            setattr(b, name, field.value)
             j = getattr(b, name)
             self.assertEqual(expect, j)
 
     def test_layout(self):
-        """This is a special case of test_c"""
+        """This is a special case of test_layout_against_c"""
         fields = [
-            ("A", c_uint8),
-            ("B", c_uint, 16),
+            MemberSpec("A", c_uint8, None, 0),
+            MemberSpec("B", c_uint, 16, 0),
         ]
         align_, size_ = layout(StructSpec(fields=fields, pack=None, windows=False))
         assert 4 == size_
@@ -479,7 +466,7 @@ class Test_Bitfields(unittest.TestCase):
 
     @given(spec=spec_struct_linux())
     @settings(deadline=datetime.timedelta(seconds=10))
-    def test_layout_against_c_big_endian(self, spec):
+    def _test_layout_against_c_big_endian(self, spec):
         note(make_c(spec))
         self.assertEqual(get_from_c_big_endian(spec), layout(spec), "align_, size_")
 
@@ -601,7 +588,7 @@ if __name__ == "__main__":
     # t.test_struct_example()
     # t.test_struct_example2()
     # t.test_structure_against_c()
-    t.test_layout_against_c_big_endian()
+    # t.test_layout_against_c_big_endian()
 
     # fields=[('A', ctypes.c_ubyte, 1)]
     # print(layout(fields))
