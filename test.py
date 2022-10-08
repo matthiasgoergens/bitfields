@@ -95,9 +95,13 @@ class StructSpec:
 
     def to_struct(self):
         # TODO: support Windows mode on Linux?
-        class X(ctypes.structure):
-            _pack_ = self.pack
-            _fields_ = self.to_fields()
+        if self.pack is None:
+            class X(ctypes.Structure):
+                _fields_ = self.to_fields()
+        else:
+            class X(ctypes.Structure):
+                _pack_ = self.pack
+                _fields_ = self.to_fields()
         return X
 
 @st.composite
@@ -445,11 +449,11 @@ class Test_Bitfields(unittest.TestCase):
             MemberSpec("A", c_uint8, None, 0),
             MemberSpec("B", c_uint, 16, 0),
         ]
-        align_, size_ = layout(StructSpec(fields=fields, pack=None, windows=False))
+        spec = StructSpec(fields=fields, pack=None, windows=False)
+        align_, size_ = layout(spec)
         assert 4 == size_
 
-        class X(Structure):
-            _fields_ = fields
+        X = spec.to_struct()
 
         self.assertEqual(4, sizeof(X))
 
@@ -482,13 +486,13 @@ class Test_Bitfields(unittest.TestCase):
         if spec.pack is None:
 
             class X(Structure):
-                _fields_ = spec.fields
+                _fields_ = spec.to_fields()
 
         else:
             print(spec, flush=True, file=open('log.txt', 'a'))
             class X(Structure):
                 _pack_ = spec.pack
-                _fields_ = spec.fields
+                _fields_ = spec.to_fields()
 
         self.assertEqual(sizeof_, sizeof(X), "sizeof doesn't match")
         self.assertEqual(align_, alignment(X), "alignment doesn't match")
@@ -502,7 +506,7 @@ class Test_Bitfields(unittest.TestCase):
     def test_struct_example2(self):
         class X(Structure):
             _pack_ = 1
-            _fields_ = fields=[('IRF', ctypes.c_int, 17), ('OLIEG', c_ushort), ('EMZTTMFWIYXUIXRFEVFMSK', ctypes.c_uint, 19), ('VDTFOKUTVGDUBYK', ctypes.c_byte)]
+            _fields_ = [('IRF', ctypes.c_int, 17), ('OLIEG', c_ushort), ('EMZTTMFWIYXUIXRFEVFMSK', ctypes.c_uint, 19), ('VDTFOKUTVGDUBYK', ctypes.c_byte)]
 
 
     def test_structures(self):
