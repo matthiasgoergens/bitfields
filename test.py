@@ -59,12 +59,17 @@ all_types = Union[
 
 member_t = Union[Tuple[str, all_types, int], Tuple[str, all_types]]
 
+@d.dataclass
+class MemberSpec:
+    name: str
+    type: all_types
+    bitsize: Optional[int]
 
 @d.dataclass
 class StructSpec:
     pack: Optional[int]
     windows: bool
-    fields: List[member_t]
+    fields: List[MemberSpec]
 
 
 DPRINT = True
@@ -375,13 +380,16 @@ int main(int argc, char** argv) {{
 }}
 """
 
+"""
+"""
+
 def get_from_c_big_endian(spec):
     with tempfile.TemporaryDirectory() as d:
         d: p.Path = p.Path(d)
         f = d / "gen.c"
         out = d / "a.out"
         f.write_text(make_c(spec))
-
+        
         #         --name big_endian_test
         pre = shlex.split(f"""
         docker run --platform linux/s390x

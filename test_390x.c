@@ -43,7 +43,7 @@ int main(int argc, char** argv) {
   printf("\n");
   printf("%x %x %x\n", uu.foo.a, uu.foo.b, uu.foo.c);
   uint64_t f = *((uint64_t*) &uu.foo);
-  printf("%016llx\n", f);
+  printf("%016lx\n", f);
 
   return 0;
 }
