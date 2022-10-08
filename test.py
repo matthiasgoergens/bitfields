@@ -87,6 +87,9 @@ class MemberSpec:
         else:
             return (self.name, self.type, self.bitsize)
 
+    def assignment(self, pname):
+        return f"{pname}->{self.name} = {self.value};"
+
 
 @d.dataclass
 class StructSpec:
@@ -112,6 +115,9 @@ class StructSpec:
 
         return X
 
+    def assignments(self, pname):
+        return "\n".join(f.assignment(pname) for f in self.fields)
+
 
 @st.composite
 def member(draw, name: str):
@@ -120,7 +126,7 @@ def member(draw, name: str):
         st.one_of(st.none(), st.integers(min_value=1, max_value=8 * sizeof(type_)))
     )
     # Value might be bigger than what we can fit in the type, that's fine.
-    value = draw(st.integers())
+    value = draw(st.integers(min_value=-(2**63), max_value=2**64 - 1))
     return MemberSpec(name=name, type=type_, bitsize=bitsize, value=value)
 
 
@@ -388,8 +394,42 @@ int main(int argc, char** argv) {{
 """
 
 
+def make_c_out(spec: StructSpec):
+    if spec.pack is not None:
+        pragma = f"#pragma pack({spec.pack})"
+    else:
+        pragma = ""
+    if spec.pack is not None or spec.windows:
+        attribute = "__attribute__ ((ms_struct))"
+    else:
+        attribute = ""
+
+    return f"""
+#include<stdio.h>
+#include<inttypes.h>
+#include <stdlib.h>
+
+{pragma}
+
+typedef struct
+{attribute}
+{{
+{c_format(spec.to_fields())}
+}} Foo;
+
+int main(int argc, char** argv) {{
+    Foo *foo = calloc(sizeof(Foo), 1);
+    {spec.assignments('foo')}
+    fwrite(foo, sizeof(Foo), 1, stdout);
+    fflush(stdout);
+    free(foo);
+    return 0;
+}}
 """
-"""
+
+
+def try_c_out():
+    print(make_c_out(spec_struct().example()))
 
 
 def get_from_c_big_endian(spec):
@@ -424,6 +464,22 @@ def get_from_c(spec):
         proc = sp.run([out], capture_output=True)
         align_, sizeof_ = map(int, proc.stdout.split())
         return align_, sizeof_
+
+
+def get_from_c_out(spec):
+    with tempfile.TemporaryDirectory() as d:
+        d: p.Path = p.Path(d)
+        f = d / "gen.c"
+        out = d / "a.out"
+        source = make_c_out(spec)
+        note(source)
+        f.write_text(source)
+        sp.run(
+            (*shlex.split("clang -fsanitize=undefined -Wall -O0 -o"), out, f),
+            check=True,
+        )
+        proc = sp.run([out], capture_output=True, check=True)
+        return proc.stdout
 
 
 from ctypes import c_ushort
@@ -516,6 +572,22 @@ class Test_Bitfields(unittest.TestCase):
         self.assertEqual(sizeof_, sizeof(X), "sizeof doesn't match")
         self.assertEqual(align_, alignment(X), "alignment doesn't match")
 
+    @given(spec=spec_struct())
+    # @given(spec=spec_struct_linux())
+    def test_structure_against_c_out(self, spec):
+        assume(not (spec.pack is None and spec.windows))
+
+        out = get_from_c_out(spec)
+        X = spec.to_struct()  #
+        buf = ctypes.create_string_buffer(out, len(out))
+        note(f"buf: {repr(buf)}")
+        self.assertEqual(len(out), sizeof(X))
+        from_c = X.from_buffer(buf)
+        from_p = X(**{f.name: f.value for f in spec.fields})
+        pp = {f.name: getattr(from_p, f.name) for f in spec.fields}
+        cc = {f.name: getattr(from_c, f.name) for f in spec.fields}
+        self.assertEqual(cc, pp)
+
     def test_struct_example(self):
         class X(Structure):
             _pack_ = 1
@@ -606,11 +678,14 @@ class Test_Bitfields(unittest.TestCase):
 # and checking via unions?
 
 if __name__ == "__main__":
+    # try_c_out()
+
     import tracemalloc
 
     tracemalloc.start()
     DPRINT = True
     t = Test_Bitfields()
+    t.test_structure_against_c_out()
     # t.test_mixed_2()
     # t.test_structures()
     # t.test_struct_example()
