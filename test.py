@@ -105,11 +105,13 @@ class StructSpec:
         if self.pack is None:
 
             class X(ctypes.Structure):
+                _ms_struct_ = self.windows
                 _fields_ = self.to_fields()
 
         else:
 
             class X(ctypes.Structure):
+                _ms_struct_ = self.windows
                 _pack_ = self.pack
                 _fields_ = self.to_fields()
 
@@ -552,7 +554,7 @@ class Test_Bitfields(unittest.TestCase):
     @given(spec=spec_struct())
     # @given(spec=spec_struct_linux())
     def test_structure_against_c(self, spec):
-        assume(not (spec.pack is None and spec.windows))
+        # assume(not (spec.pack is None and spec.windows))
 
         align_, sizeof_ = get_from_c(spec)
         # print(align_, sizeof_)
@@ -575,7 +577,7 @@ class Test_Bitfields(unittest.TestCase):
     @given(spec=spec_struct())
     # @given(spec=spec_struct_linux())
     def test_structure_against_c_out(self, spec):
-        assume(not (spec.pack is None and spec.windows))
+        # assume(not (spec.pack is None and spec.windows))
 
         out = get_from_c_out(spec)
         X = spec.to_struct()  #
