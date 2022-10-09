@@ -145,7 +145,11 @@ def actual_layout(flags):
         end = n.bit_length()
         if width is None:
             width = sizeof(ctype) * 8
-        assert end - start == width
+        try:
+            assert end - start == width, f"{end} - {start} == {end - start} == {width}"
+        except:
+            print(f"c_code:\n{c_code}")
+            raise
         assert n == 2 ** end - 2 ** start
 
         bit_offset = start % (sizeof(ctype) * 8)
