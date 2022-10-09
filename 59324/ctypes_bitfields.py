@@ -69,8 +69,16 @@ def ctypes_layout(flags):
 
     for name, (ctype, requested_width) in zip(names(), flags):
         field = getattr(BITS, name)
-        width, start = divmod(field.size, 65536)
-        yield field.offset, start, width
+        if requested_width is None:
+            width = 8 * field.size
+            start = 0
+            yield field.offset, start, width
+        else:
+            # width, start = divmod(field.size, 65536)
+            width = field.size >> 16
+            start = field.size & 0xffff
+            assert (width, start) == divmod(field.size, 65536), ((width, start), divmod(field.size, 65536))
+            yield field.offset, start, width
 
 
 def simulated_layout(flags):
@@ -186,10 +194,13 @@ def random_test(size=3):
     s = list(simulated_layout(flags))
     a = list(actual_layout(flags))
     if not a == s == c:
-        print(flags)
+        print(f"flags: {flags}")
+        print("field.offset, start, width")
         print("ctypes:    ", c)
         print("simulated: ", s)
         print("actual:    ", a)
+        c_code = render_code(flags)
+        print(f"c_code:\n{c_code}")
         assert False
 
 
