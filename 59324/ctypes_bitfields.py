@@ -12,6 +12,7 @@ c_code_template = """\
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <string.h>
 
 struct flags {{
 {fields}\
@@ -20,6 +21,8 @@ struct flags {{
 int main(void) {{
   struct flags my_flags;
   unsigned char buffer[1000];
+  memset(&my_flags, 0, sizeof(my_flags));
+  memset(buffer, 0, sizeof(buffer));
 
 {write_field_mask}\
   return 0;
@@ -140,6 +143,7 @@ def actual_layout(flags):
 
     for i, (ctype, width) in enumerate(flags):
         chunk = output[i * piece_size:(i + 1) * piece_size]
+        assert len(chunk) == piece_size
         n = int.from_bytes(chunk, byteorder='little')
         start = ((n - 1) & ~n).bit_length()
         end = n.bit_length()
@@ -148,6 +152,10 @@ def actual_layout(flags):
         try:
             assert end - start == width, f"{end} - {start} == {end - start} == {width}"
         except:
+            print(f"chunk: {[hex(x) for x in reversed(chunk)]}")
+            print(f"i: {i}")
+            print(f"n: {n:x}")
+            print(f"flags: {flags}")
             print(f"c_code:\n{c_code}")
             raise
         assert n == 2 ** end - 2 ** start
@@ -186,6 +194,7 @@ def random_test(size=3):
 
 
 def main():
+    random.seed(0)
     for size in range(2, 10):
         print("size: ", size)
         for i in range(1000):
