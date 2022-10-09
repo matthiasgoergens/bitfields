@@ -660,9 +660,11 @@ class Test_Bitfields(unittest.TestCase):
         self.assertEqual(cc, pp)
 
     @given(spec=spec_struct())
-    @settings(deadline=datetime.timedelta(seconds=10), verbosity=Verbosity.verbose)
+    @settings(deadline=datetime.timedelta(seconds=10),
+    # verbosity=Verbosity.verbose
+    )
     def test_structure_against_c_out_big_endian(self, spec):
-        out = get_from_c_out_big_endian(spec)
+        out = get_from_c_out_big_endian_fake(spec)
         X = spec.to_struct_big_endian()  #
         buf = ctypes.create_string_buffer(out, len(out))
         note(f"buf: {repr(buf)}")
@@ -778,8 +780,8 @@ if __name__ == "__main__":
     DPRINT = True
     t = Test_Bitfields()
     # t.test_structure_against_c_out()
-    t.test_fake_against_c_out_big_endian()
-    # t.test_structure_against_c_out_big_endian()
+    # t.test_fake_against_c_out_big_endian()
+    t.test_structure_against_c_out_big_endian()
     # t.test_mixed_2()
     # t.test_structures()
     # t.test_struct_example()

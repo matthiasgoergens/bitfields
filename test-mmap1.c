@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <inttypes.h>
 #include <assert.h>
+#include <string.h>
 
 typedef struct
 // __attribute__((packed))
@@ -22,9 +23,7 @@ int main(int argc, char **argv)
 {
   assert(sizeof(Foo)==sizeof(Uu));
   Uu u;
-  for(int i=0; i<sizeof(Foo); ++i) {
-    u.x[i] = 0;
-  }
+  memset_explicit(&u, 0, sizeof(u));
 
   u.foo.A = -1;
   u.foo.B = -1;
