@@ -101,11 +101,21 @@ class StructSpec:
         return [f.to_field() for f in self.fields]
 
     def to_struct(self):
-        # TODO: support Windows mode on Linux?
-        if self.pack is None:
+        if self.pack is None and self.windows is None:
+
+            class X(ctypes.Structure):
+                _fields_ = self.to_fields()
+
+        elif self.pack is None:
 
             class X(ctypes.Structure):
                 _ms_struct_ = self.windows
+                _fields_ = self.to_fields()
+
+        elif self.windows is None:
+
+            class X(ctypes.Structure):
+                _pack_ = self.pack
                 _fields_ = self.to_fields()
 
         else:
@@ -156,15 +166,17 @@ def fields(draw):
 
 @st.composite
 def spec_struct(draw):
-    windows = draw(st.booleans())
     pack = draw(st.sampled_from([None, 1, 2, 4, 8]))
+    if pack is not None:
+        windows = draw(st.sampled_from([None, True]))
+    else:
+        windows = draw(st.sampled_from([None, False, True]))
     fields_ = draw(fields())
     return StructSpec(fields=fields_, pack=pack, windows=windows)
 
 
 @st.composite
 def spec_struct_linux(draw):
-    windows = draw(st.booleans())
     return StructSpec(fields=draw(fields()), pack=None, windows=False)
 
 
@@ -415,18 +427,18 @@ int main(int argc, char** argv) {{
 
 def make_c_out(spec: StructSpec, endian=None):
     # scalar_storage_order("big-endian"))
-#     struct __attribute__((packed, scalar_storage_order("big-endian"))) mystruct {
-#     uint16_t a;
-#     uint32_t b;
-#     uint64_t c;
-# };
+    #     struct __attribute__((packed, scalar_storage_order("big-endian"))) mystruct {
+    #     uint16_t a;
+    #     uint32_t b;
+    #     uint64_t c;
+    # };
     if spec.pack is not None:
         pragma = f"#pragma pack({spec.pack})"
     else:
         pragma = ""
     attributes = []
     if spec.pack is not None or spec.windows:
-        attributes.append('ms_struct')
+        attributes.append("ms_struct")
     #     attribute = "__attribute__ ((ms_struct))"
     # else:
     #     attribute = ""
@@ -527,6 +539,7 @@ def get_from_c_out_big_endian_fake(spec):
         dprint(cc.stderr)
         proc = sp.run([out], capture_output=True, check=True)
         return proc.stdout
+
 
 def get_from_c(spec):
     with tempfile.TemporaryDirectory() as d:
@@ -660,8 +673,9 @@ class Test_Bitfields(unittest.TestCase):
         self.assertEqual(cc, pp)
 
     @given(spec=spec_struct())
-    @settings(deadline=datetime.timedelta(seconds=10),
-    # verbosity=Verbosity.verbose
+    @settings(
+        deadline=datetime.timedelta(seconds=10),
+        # verbosity=Verbosity.verbose
     )
     def test_structure_against_c_out_big_endian(self, spec):
         out = get_from_c_out_big_endian_fake(spec)
@@ -766,6 +780,77 @@ class Test_Bitfields(unittest.TestCase):
 
         self.assertEqual(sizeof(X), alignment(c_int) + sizeof(c_int))
 
+    def test_86098(self):
+        class X(Structure):
+            _fields_ = [("a", c_uint8, 8), ("b", c_uint8, 8), ("c", c_uint32, 16)]
+
+        self.assertEqual(4, sizeof(X))
+
+    def _test_packed_posix(self):
+        test_cases = {
+            (
+                ("a", c_uint8, 4),
+                ("b", c_uint8, 4),
+            ): 1,
+            (
+                ("a", c_uint8, 1),
+                ("b", c_uint16, 1),
+                ("c", c_uint32, 1),
+                ("d", c_uint64, 1),
+            ): 1,
+            (
+                ("a", c_uint8, 8),
+                ("b", c_uint16, 1),
+                ("c", c_uint32, 1),
+                ("d", c_uint64, 1),
+            ): 2,
+            (
+                ("a", c_uint32, 9),
+                ("b", c_uint16, 10),
+                ("c", c_uint32, 25),
+                ("d", c_uint64, 1),
+            ): 6,
+            (
+                ("a", c_uint32, 9),
+                ("b", c_uint16, 10),
+                ("c", c_uint32, 25),
+                ("d", c_uint64, 5),
+            ): 7,
+            (
+                ("a", c_uint16),
+                ("b", c_uint16, 9),
+                ("c", c_uint16, 1),
+                ("d", c_uint16, 1),
+                ("e", c_uint16, 1),
+                ("f", c_uint16, 1),
+                ("g", c_uint16, 3),
+                ("h", c_uint32, 10),
+                ("i", c_uint32, 20),
+                ("j", c_uint32, 2),
+            ): 8,
+            (
+                ("a", c_uint16, 9),
+                ("b", c_uint16, 10),
+                ("d", c_uint16),
+                ("c", c_uint8, 8),
+            ): 6,
+            (
+                ("a", c_uint32, 9),
+                ("b", c_uint32),
+                ("c", c_uint32, 8),
+            ): 7,
+        }
+
+        for index, (fields, size) in enumerate(test_cases.items()):
+            with self.subTest(fields=fields):
+
+                class X(Structure):
+                    _ms_struct_ = 0
+                    _gcc_packed_ = 1
+                    _fields_ = list(fields)
+
+                self.assertEqual(sizeof(X), size, (index, fields))
+
 
 # TODO: perhaps also check that we have the same layout as C?
 # by creating random assignments.
@@ -779,9 +864,11 @@ if __name__ == "__main__":
     tracemalloc.start()
     DPRINT = True
     t = Test_Bitfields()
+    # t.test_86098()
+    # t.test_packed_posix()
     # t.test_structure_against_c_out()
     # t.test_fake_against_c_out_big_endian()
-    t.test_structure_against_c_out_big_endian()
+    # t.test_structure_against_c_out_big_endian()
     # t.test_mixed_2()
     # t.test_structures()
     # t.test_struct_example()
