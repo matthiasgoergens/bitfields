@@ -635,22 +635,9 @@ class Test_Bitfields(unittest.TestCase):
     @given(spec=spec_struct())
     # @given(spec=spec_struct_linux())
     def test_structure_against_c(self, spec):
-        # assume(not (spec.pack is None and spec.windows))
-
         align_, sizeof_ = get_from_c(spec)
-        # print(align_, sizeof_)
-
-        if spec.pack is None:
-
-            class X(Structure):
-                _fields_ = spec.to_fields()
-
-        else:
-            print(spec, flush=True, file=open("log.txt", "a"))
-
-            class X(Structure):
-                _pack_ = spec.pack
-                _fields_ = spec.to_fields()
+        dprint(make_c(spec))
+        X = spec.to_struct()
 
         self.assertEqual(sizeof_, sizeof(X), "sizeof doesn't match")
         self.assertEqual(align_, alignment(X), "alignment doesn't match")
@@ -855,11 +842,12 @@ class Test_Bitfields(unittest.TestCase):
 if __name__ == "__main__":
     # try_c_out()
 
-    import tracemalloc
+    # import tracemalloc
 
-    tracemalloc.start()
+    # tracemalloc.start()
     DPRINT = True
     t = Test_Bitfields()
+    t.test_structure_against_c()
     # t.test_86098()
     # t.test_packed_posix()
     # t.test_structure_against_c_out()
