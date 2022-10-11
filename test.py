@@ -100,27 +100,37 @@ class StructSpec:
     def to_fields(self):
         return [f.to_field() for f in self.fields]
 
-    def to_struct(self):
+    def to_struct(self, endian=None):
+        match endian:
+            case 'small':
+                struct = ctypes.LittleEndianStructure
+            case 'big':
+                struct = ctypes.BigEndianStructure
+            case None:
+                struct = ctypes.Structure
+            case _:
+                raise ValueError("Pick something")
+
         if self.pack is None and self.windows is None:
 
-            class X(ctypes.Structure):
+            class X(struct):
                 _fields_ = self.to_fields()
 
         elif self.pack is None:
 
-            class X(ctypes.Structure):
+            class X(struct):
                 _ms_struct_ = self.windows
                 _fields_ = self.to_fields()
 
         elif self.windows is None:
 
-            class X(ctypes.Structure):
+            class X(struct):
                 _pack_ = self.pack
                 _fields_ = self.to_fields()
 
         else:
 
-            class X(ctypes.Structure):
+            class X(struct):
                 _ms_struct_ = self.windows
                 _pack_ = self.pack
                 _fields_ = self.to_fields()
@@ -128,21 +138,7 @@ class StructSpec:
         return X
 
     def to_struct_big_endian(self):
-        # TODO: support Windows mode on Linux?
-        if self.pack is None:
-
-            class X(ctypes.BigEndianStructure):
-                _ms_struct_ = self.windows
-                _fields_ = self.to_fields()
-
-        else:
-
-            class X(ctypes.BigEndianStructure):
-                _ms_struct_ = self.windows
-                _pack_ = self.pack
-                _fields_ = self.to_fields()
-
-        return X
+        return self.to_struct(endian='big')
 
     def assignments(self, pname):
         return "\n".join(f.assignment(pname) for f in self.fields)
