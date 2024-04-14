@@ -7,13 +7,31 @@ import shlex
 import string
 import tempfile
 import unittest
-from ctypes import *
-from ctypes import (Structure, alignment, c_int, c_int8, c_int16, c_int32,
-                    c_int64, c_long, c_uint, c_uint8, c_uint16, c_uint32,
-                    c_uint64, c_ulong, c_ulonglong, sizeof)
+from ctypes import c_ushort
+from ctypes import c_char, c_byte, c_ubyte, c_short, c_longlong, c_float, c_double
+from ctypes import (
+    Structure,
+    alignment,
+    c_int,
+    c_int8,
+    c_int16,
+    c_int32,
+    c_int64,
+    c_long,
+    c_uint,
+    c_uint8,
+    c_uint16,
+    c_uint32,
+    c_uint64,
+    c_ulong,
+    c_ulonglong,
+    sizeof,
+)
 from dataclasses import dataclass
 from struct import calcsize
 from typing import *
+from typing import Union, List, Tuple, Optional
+import subprocess as sp
 
 # import dataclassy as d
 from hypothesis import assume, given, note, settings
@@ -85,9 +103,9 @@ class StructSpec:
 
     def to_struct(self, endian=None):
         match endian:
-            case 'small':
+            case "small":
                 struct = ctypes.LittleEndianStructure
-            case 'big':
+            case "big":
                 struct = ctypes.BigEndianStructure
             case None:
                 struct = ctypes.Structure
@@ -121,7 +139,7 @@ class StructSpec:
         return X
 
     def to_struct_big_endian(self):
-        return self.to_struct(endian='big')
+        return self.to_struct(endian="big")
 
     def assignments(self, pname):
         return "\n".join(f.assignment(pname) for f in self.fields)
@@ -358,9 +376,6 @@ def c_name(type_: all_types) -> str:
     }[type_]
 
 
-import subprocess as sp
-
-
 def c_format1(field: member_t) -> str:
     match field:
         case (name, type_):
@@ -547,9 +562,6 @@ def get_from_c_out(spec):
         return proc.stdout
 
 
-from ctypes import c_ushort
-
-
 class Test_Bitfields(unittest.TestCase):
     def test_mixed_5_original(self):
         class X(Structure):
@@ -696,6 +708,8 @@ class Test_Bitfields(unittest.TestCase):
         dprint("WNDPROC sizeof", sizeof(WNDPROC))
         wndclass.lpfnWndProc = tmp
         return
+        from ctypes import c_ushort, WINFUNCTYPE
+
         WNDPROC_2 = WINFUNCTYPE(c_long, c_int, c_int, c_int, c_int)
 
         # This is no longer true, now that WINFUNCTYPE caches created types internally.
