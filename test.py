@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from struct import calcsize
 from typing import *
 
-import dataclassy as d
+# import dataclassy as d
 from hypothesis import Verbosity, assume, example, given, note, settings
 from hypothesis import strategies as st
 
@@ -74,7 +74,7 @@ all_types = Union[
 member_t = Union[Tuple[str, all_types, int], Tuple[str, all_types]]
 
 
-@d.dataclass
+@dataclass
 class MemberSpec:
     name: str
     type: all_types
@@ -91,7 +91,7 @@ class MemberSpec:
         return f"{pname}->{self.name} = {self.value};"
 
 
-@d.dataclass
+@dataclass
 class StructSpec:
     pack: Optional[int]
     windows: bool
@@ -218,7 +218,7 @@ def normalise1(member: member_t) -> Tuple[str, all_types, int]:
 members_t = List[member_t]
 
 
-@d.dataclass
+@dataclass
 class Bitfield:
     start: int
     size: int
