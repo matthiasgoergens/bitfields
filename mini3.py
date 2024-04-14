@@ -11,7 +11,8 @@ class Bar(Structure):
         ("A", c_uint, 20),
         ("B", c_ulonglong, 24),
         # ("C", c_ulonglong, 8)
-        ]
+    ]
+
 
 def test():
     # for a in [Foo(), Bar()]:
@@ -19,7 +20,7 @@ def test():
         a.A = -1
         a.B = -1
         a.A = 0x12345
-        a.B = 0x6789ab
+        a.B = 0x6789AB
         # a.C = 0xcd
         # a.D = 0xbb
         print(f"sizeof: {ctypes.sizeof(a)} {ctypes.sizeof(Bar)}")
@@ -27,37 +28,39 @@ def test():
         # print(hex(a.C))
         # print(hex(a.A), hex(a.B), hex(a.C))
 
-0xcc00bbbbfff0aaaa # gcc / clang
-0xbbbcc0000000aaaa # python
-0xbbb000000000aaaa # without c
 
-0xcd_6789ab_fff_12345 # gcc / clang
-0xcd_6789ab_000_12345 # all ints in python
-0x9ab_cd_000000_12345 # python
+0xCC00BBBBFFF0AAAA  # gcc / clang
+0xBBBCC0000000AAAA  # python
+0xBBB000000000AAAA  # without c
+
+0xCD_6789AB_FFF_12345  # gcc / clang
+0xCD_6789AB_000_12345  # all ints in python
+0x9AB_CD_000000_12345  # python
 
 
 #   v 52 bits offset
-0x9ab_0_0000000_12345 # without c
+0x9AB_0_0000000_12345  # without c
 
 # 8ULL, 8U in C
-0xffffffffffff_ab_45 # gcc / clang
-0x0000_0000_ffffff_ff
+0xFFFFFFFFFFFF_AB_45  # gcc / clang
+0x0000_0000_FFFFFF_FF
 #       v 40 bits offset. = 32 + 8
-0x0000_ab00_000000_45 # python
+0x0000_AB00_000000_45  # python
 
 # x=      0xffffffff
 # 0x0000ab4500000000 # 8U 8U
 # 0xffffffffffffab45
 
-0x000000000002af4500000000
-0xfffffffffc02af45
-0xfffffffffff2af45
+0x000000000002AF4500000000
+0xFFFFFFFFFC02AF45
+0xFFFFFFFFFFF2AF45
 
 # (*pbitofs + bitsize + 7) & ~(8 * dict->align - 1);
 
 0o3777777740003777777
-0o3777777,0o77777777
-0o3777777,0o77777777
+0o3777777, 0o77777777
+0o3777777, 0o77777777
+
 
 def test_round():
     bitofs = 20
@@ -65,6 +68,7 @@ def test_round():
     dict_align = 2
     x = (bitofs + bitsize + 7) & ~(8 * dict_align - 1)
     print(x)
+
 
 if __name__ == "__main__":
     test()

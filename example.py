@@ -4,9 +4,10 @@ from ctypes import *
 class X(Structure):
     _ms_struct_ = True
     _fields_ = [
-        ('A', c_ubyte),
-        ('B', c_ushort, 1),
+        ("A", c_ubyte),
+        ("B", c_ushort, 1),
     ]
+
 
 print(sizeof(X))
 print(sizeof(c_ushort))
