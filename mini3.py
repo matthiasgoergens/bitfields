@@ -1,6 +1,5 @@
-from ctypes import Structure, c_uint, c_ulonglong
 import ctypes
-
+from ctypes import Structure, c_uint, c_ulonglong
 
 # class Foo(Structure):
 #     _fields_ = [("A", c_uint, 1), ("B", c_ushort, 16)]

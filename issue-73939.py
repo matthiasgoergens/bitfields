@@ -1,5 +1,6 @@
 from ctypes import *
 
+
 class MyStructure(Structure):
     _pack_      = 1
     _fields_    = [ 

@@ -1,5 +1,4 @@
-from ctypes import Structure, c_uint, c_ulonglong
-from ctypes import sizeof, alignment
+from ctypes import Structure, alignment, c_uint, c_ulonglong, sizeof
 
 
 class Foo(Structure):

@@ -1,6 +1,5 @@
-from ctypes import Structure, c_uint, c_ulonglong
 import ctypes
-
+from ctypes import Structure, c_uint, c_ulonglong
 
 
 class Bar(Structure):

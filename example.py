@@ -1,5 +1,6 @@
 from ctypes import *
 
+
 class X(Structure):
     _ms_struct_ = True
     _fields_ = [

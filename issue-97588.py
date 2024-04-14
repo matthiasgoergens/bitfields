@@ -14,9 +14,7 @@
 
 # print("All good")
 
-from ctypes import Structure, Union
-from ctypes import sizeof
-from ctypes import c_uint8, c_uint16
+from ctypes import Structure, Union, c_uint8, c_uint16, sizeof
 
 
 class sub_type(Structure):
