@@ -1,5 +1,4 @@
 from ctypes import *
-import ctypes
 
 class X(Structure):
     _ms_struct_ = True

@@ -15,9 +15,8 @@
 # print("All good")
 
 from ctypes import Structure, Union
-from ctypes import alignment, sizeof
-from ctypes import c_int8, c_int16, c_int32, c_int64
-from ctypes import c_uint8, c_uint16, c_uint32, c_uint64
+from ctypes import sizeof
+from ctypes import c_uint8, c_uint16
 
 
 class sub_type(Structure):

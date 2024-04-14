@@ -5,14 +5,12 @@ import math
 import pathlib as p
 import shlex
 import string
-import sys
 import tempfile
 import unittest
 from ctypes import *
 from ctypes import (
     Structure,
     alignment,
-    c_char_p,
     c_int,
     c_int8,
     c_int16,
@@ -33,7 +31,7 @@ from struct import calcsize
 from typing import *
 
 # import dataclassy as d
-from hypothesis import Verbosity, assume, example, given, note, settings
+from hypothesis import assume, given, note, settings
 from hypothesis import strategies as st
 
 DPRINT = True
@@ -354,7 +352,6 @@ def layout_linux(spec: StructSpec):
 
 
 def layout(spec: StructSpec):
-    pack = spec.pack or math.inf
     windows = spec.windows or (spec.pack is not None)
     if windows:
         return layout_windows(spec)

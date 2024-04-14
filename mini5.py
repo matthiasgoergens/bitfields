@@ -1,6 +1,5 @@
-from ctypes import Structure, c_uint, c_ulonglong, c_ushort, c_uint8
+from ctypes import Structure, c_uint, c_uint8
 from ctypes import sizeof
-import ctypes
 
 
 # class Foo(Structure):
